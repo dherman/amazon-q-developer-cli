@@ -15,6 +15,7 @@ mod server_messenger;
 mod skim_integration;
 mod token_counter;
 pub mod tool_manager;
+pub mod tool_selector;
 pub mod tools;
 pub mod util;
 

@@ -23,11 +23,11 @@
   - [x] Add validation for module definitions when loading MCP servers
   - [x] Create data structures to represent modules and their relationships to tools
 
-- [ ] Create tool selector infrastructure
-  - [ ] Define `ToolSelector` trait for abstraction
-  - [ ] Implement LLM-based tool selector using Claude 3.5-Sonnet
-  - [ ] Add configuration for tool selector model selection (hardcoded initially)
-  - [ ] Create prompt templates for tool selection
+- [x] Create tool selector infrastructure
+  - [x] Define `ToolSelector` trait for abstraction
+  - [x] Implement LLM-based tool selector using Claude 3.5-Sonnet
+  - [x] Add configuration for tool selector model selection (hardcoded initially)
+  - [x] Create prompt templates for tool selection
 
 - [ ] Modify tool manager to support dynamic selection
   - [ ] Update `ToolManager` to track which servers are dynamic vs. pinned
@@ -36,15 +36,15 @@
 
 ## Tool Selection Logic
 
-- [ ] Implement two-phase selection architecture
-  - [ ] Create module for tool selection phase
+- [x] Implement two-phase selection architecture
+  - [x] Create module for tool selection phase
   - [ ] Integrate with existing agent phase
-  - [ ] Define interfaces between phases
+  - [x] Define interfaces between phases
 
-- [ ] Develop selection algorithm
-  - [ ] Create prompt engineering for tool selection
-  - [ ] Implement relevance scoring mechanism
-  - [ ] Add filtering based on relevance threshold
+- [x] Develop selection algorithm
+  - [x] Create prompt engineering for tool selection
+  - [x] Implement relevance scoring mechanism
+  - [x] Add filtering based on relevance threshold
 
 - [ ] Add conversation context tracking
   - [ ] Track conversation history for context-aware selection
@@ -76,20 +76,20 @@
   - [x] Add `dynamic` field to server configuration
   - [x] Ensure backward compatibility
 
-- [ ] Implement module configuration validation
-  - [ ] Validate module definitions against schema
-  - [ ] Add warning for invalid module definitions
+- [x] Implement module configuration validation
+  - [x] Validate module definitions against schema
+  - [x] Add warning for invalid module definitions
 
-- [ ] Add caching mechanism
-  - [ ] Cache tool selection results
-  - [ ] Implement cache invalidation based on conversation context
+- [x] Add caching mechanism
+  - [x] Cache tool selection results
+  - [x] Implement cache invalidation based on conversation context
 
 ## Testing and Evaluation
 
 - [x] Create unit tests
   - [x] Test dynamic flag in MCP server configuration
-  - [ ] Test tool selection algorithm
-  - [ ] Test module configuration parsing
+  - [x] Test tool selection algorithm
+  - [x] Test module configuration parsing
   - [ ] Test dynamic vs. pinned behavior
 
 - [ ] Develop integration tests
