@@ -11,6 +11,7 @@ use clap::{
 use crossterm::style::{
     Attribute,
     Color,
+    Stylize,
 };
 use crossterm::{
     queue,
@@ -32,6 +33,10 @@ use crate::util::consts::MCP_SERVER_TOOL_DELIMITER;
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
 pub struct ToolsArgs {
+    /// Show all tools, including those not dynamically selected
+    #[arg(short = 'a', long = "all")]
+    all: bool,
+    
     #[command(subcommand)]
     subcommand: Option<ToolsSubcommand>,
 }
@@ -93,6 +98,24 @@ impl ToolsArgs {
             (ToolOrigin::McpServer(name_a), ToolOrigin::McpServer(name_b)) => name_a.cmp(name_b),
         });
 
+        // Get the list of dynamically selected tools
+        let dynamically_selected_tools = if !self.all {
+            // Get the tools that are currently selected
+            session.conversation.tools.values()
+                .flat_map(|tools| tools.iter())
+                .filter_map(|FigTool::ToolSpecification(spec)| {
+                    if spec.name == DUMMY_TOOL_NAME {
+                        None
+                    } else {
+                        Some(spec.name.clone())
+                    }
+                })
+                .collect::<HashSet<_>>()
+        } else {
+            // If showing all tools, create an empty set (no filtering)
+            HashSet::new()
+        };
+
         for (origin, tools) in origin_tools.iter() {
             // Note that Tool is model facing and thus would have names recognized by model.
             // Here we need to convert them to their host / user facing counter part.
@@ -104,18 +127,45 @@ impl ToolsArgs {
                         return None;
                     }
 
+                    // If we're not showing all tools and this is from a dynamic server,
+                    // only show it if it's in the dynamically selected tools
+                    if !self.all && 
+                       matches!(origin, ToolOrigin::McpServer(_)) && 
+                       session.conversation.tool_manager.is_tool_from_dynamic_server(&spec.name) &&
+                       !dynamically_selected_tools.contains(&spec.name) {
+                        return None;
+                    }
+
                     tn_map
                         .get(&spec.name)
                         .map_or(Some(spec.name.as_str()), |info| Some(info.host_tool_name.as_str()))
                 })
                 .collect::<BTreeSet<_>>();
 
+            // Skip empty origins
+            if sorted_tools.is_empty() {
+                continue;
+            }
+
             let to_display = sorted_tools.iter().fold(String::new(), |mut acc, tool_name| {
                 let width = longest - tool_name.len() + 4;
+                
+                // Determine if the tool is active (dynamically selected) or inactive
+                let is_active = self.all && 
+                                matches!(origin, ToolOrigin::McpServer(_)) && 
+                                !dynamically_selected_tools.contains(&tool_name.to_string());
+                
+                // Format the tool name based on whether it's active or not
+                let formatted_tool_name = if is_active {
+                    format!("{}", style::style(tool_name).with(Color::DarkGrey))
+                } else {
+                    tool_name.to_string()
+                };
+                
                 acc.push_str(
                     format!(
                         "- {}{:>width$}{}\n",
-                        tool_name,
+                        formatted_tool_name,
                         "",
                         session.conversation.agents.display_label(tool_name, origin),
                         width = width
@@ -147,6 +197,34 @@ impl ToolsArgs {
             )?;
             for client in loading {
                 queue!(session.stderr, style::Print(format!(" - {client}")), style::Print("\n"))?;
+            }
+        }
+
+        // Add a note about dynamic selection if applicable
+        let has_dynamic_servers = session.conversation.tool_manager.clients.values().any(|client| client.is_dynamic());
+        if has_dynamic_servers {
+            if self.all {
+                queue!(
+                    session.stderr,
+                    style::Print("\n"),
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print("Note: Tools in gray are from dynamic servers but not currently selected."),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print("\n"),
+                )?;
+            } else {
+                queue!(
+                    session.stderr,
+                    style::Print("\n"),
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print("Note: Only showing dynamically selected tools. Use "),
+                    style::SetForegroundColor(Color::Green),
+                    style::Print("/tools -a"),
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print(" to show all tools."),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print("\n"),
+                )?;
             }
         }
 
@@ -196,7 +274,8 @@ pub enum ToolsSubcommand {
         #[arg(required = true)]
         tool_name: String,
     },
-    /// Force re-selection of tools based on conversation context
+    /// Force re-selection of tools based on your conversation context
+    /// Only works with dynamic MCP servers
     Select,
     /// Print this message or the help of the given subcommand(s)
     Help,
@@ -398,6 +477,18 @@ impl ToolsSubcommand {
                 let last_query = session.conversation.last_user_query().unwrap_or_default();
                 let conversation_context = session.conversation.get_context_summary();
                 
+                // Check if we have any dynamic servers
+                let has_dynamic_servers = session.conversation.tool_manager.clients.values().any(|client| client.is_dynamic());
+                if !has_dynamic_servers {
+                    queue!(
+                        session.stderr,
+                        style::SetForegroundColor(Color::Yellow),
+                        style::Print("\nNo dynamic MCP servers configured. Tool selection is only available with dynamic servers."),
+                        style::SetForegroundColor(Color::Reset),
+                    )?;
+                    return Ok(ChatState::PromptUser { skip_printing_tools: true });
+                }
+                
                 // Use the tool manager to filter tools dynamically
                 match session.conversation.tool_manager.force_select_tools(&last_query, &conversation_context).await {
                     Ok(filtered_tools) => {
@@ -405,15 +496,14 @@ impl ToolsSubcommand {
                         session.conversation.tools = filtered_tools
                             .values()
                             .fold(std::collections::HashMap::<ToolOrigin, Vec<FigTool>>::new(), |mut acc, v| {
+                                let input_schema = crate::api_client::model::ToolInputSchema {
+                                    json: Some(crate::api_client::model::FigDocument::from(aws_smithy_types::Document::Null)),
+                                };
+                                
                                 let tool = FigTool::ToolSpecification(crate::api_client::model::ToolSpecification {
                                     name: v.name.clone(),
                                     description: v.description.clone(),
-                                    input_schema: crate::api_client::model::ToolInputSchema {
-                                        json: Some(serde_json::from_value(v.input_schema.0.clone())
-                                            .unwrap_or_else(|_| crate::api_client::model::FigDocument(
-                                                aws_smithy_types::Document::Null
-                                            ))),
-                                    },
+                                    input_schema,
                                 });
                                 acc.entry(v.tool_origin.clone())
                                     .and_modify(|tools| tools.push(tool.clone()))
@@ -421,11 +511,31 @@ impl ToolsSubcommand {
                                 acc
                             });
                         
+                        // Count the number of tools from dynamic servers
+                        let dynamic_tool_count = filtered_tools
+                            .values()
+                            .filter(|tool| {
+                                if let ToolOrigin::McpServer(server_name) = &tool.tool_origin {
+                                    if let Some(client) = session.conversation.tool_manager.clients.get(server_name) {
+                                        return client.is_dynamic();
+                                    }
+                                }
+                                false
+                            })
+                            .count();
+                        
                         // Show success message
                         queue!(
                             session.stderr,
                             style::SetForegroundColor(Color::Green),
-                            style::Print(format!("\nDynamically selected {} tools based on your query.", filtered_tools.len())),
+                            style::Print(format!("\nDynamically selected {} tools based on your query.", dynamic_tool_count)),
+                            style::Print("\nUse "),
+                            style::SetForegroundColor(Color::Reset),
+                            style::SetForegroundColor(Color::Blue),
+                            style::Print("/tools"),
+                            style::SetForegroundColor(Color::Reset),
+                            style::SetForegroundColor(Color::Green),
+                            style::Print(" to see the selected tools."),
                             style::SetForegroundColor(Color::Reset),
                         )?;
                     },
@@ -441,7 +551,18 @@ impl ToolsSubcommand {
             },
             Self::Help => {
                 // Show help message
-                let mut cmd = ToolsArgs::command();
+                use clap::Command;
+                let mut cmd = Command::new("tools")
+                    .about("Manage tool permissions")
+                    .subcommand(Command::new("schema").about("Show the input schema for all available tools"))
+                    .subcommand(Command::new("trust").about("Trust a specific tool or tools for the session"))
+                    .subcommand(Command::new("untrust").about("Revert a tool or tools to per-request confirmation"))
+                    .subcommand(Command::new("trustall").about("Trust all tools (equivalent to deprecated /acceptall)"))
+                    .subcommand(Command::new("reset").about("Reset all tools to default permission levels"))
+                    .subcommand(Command::new("resetsingle").about("Reset a single tool to default permission level"))
+                    .subcommand(Command::new("select").about("Force re-selection of tools based on your conversation context"))
+                    .subcommand(Command::new("help").about("Print this message or the help of the given subcommand(s)"));
+                
                 let help = cmd.render_help();
                 queue!(
                     session.stderr,

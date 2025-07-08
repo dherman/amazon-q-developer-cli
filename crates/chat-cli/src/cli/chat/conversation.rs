@@ -431,12 +431,7 @@ impl ConversationState {
 
     /// Returns the last user query from the conversation history
     pub fn last_user_query(&self) -> Option<String> {
-        for message in self.history.iter().rev() {
-            if let ChatMessage::UserInputMessage(user_message) = message {
-                return Some(user_message.content.clone());
-            }
-        }
-        None
+        self.history.back().and_then(|(user_message, _)| user_message.prompt().map(|s| s.to_string()))
     }
 
     /// Returns a summary of the conversation context
@@ -447,28 +442,22 @@ impl ConversationState {
         let max_messages = 3;
         let mut messages = Vec::new();
         
-        for message in self.history.iter().rev().take(max_messages * 2) {
-            match message {
-                ChatMessage::UserInputMessage(user_message) => {
-                    messages.push(format!("User: {}", user_message.content));
-                },
-                ChatMessage::AssistantResponseMessage(assistant_message) => {
-                    // Truncate long assistant messages
-                    let content = if assistant_message.content.len() > 500 {
-                        format!("{}...", &assistant_message.content[..500])
-                    } else {
-                        assistant_message.content.clone()
-                    };
-                    messages.push(format!("Assistant: {}", content));
-                }
+        for (user_message, assistant_message) in self.history.iter().rev().take(max_messages) {
+            // Add user message
+            if let Some(prompt) = user_message.prompt() {
+                messages.push(format!("User: {}", prompt));
             }
             
-            if messages.len() >= max_messages {
-                break;
-            }
+            // Add assistant message - truncate if too long
+            let content = if assistant_message.content().len() > 500 {
+                format!("{}...", &assistant_message.content()[..500])
+            } else {
+                assistant_message.content().to_string()
+            };
+            messages.push(format!("Assistant: {}", content));
         }
         
-        // Reverse to get chronological order
+        // Reverse the messages to show them in chronological order
         messages.reverse();
         
         // Add messages to summary
