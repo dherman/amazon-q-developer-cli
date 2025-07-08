@@ -34,7 +34,7 @@ use crossterm::{
     style,
     terminal,
 };
-use eyre::Report;
+use eyre::{Report, Result};
 use futures::{
     StreamExt,
     future,
@@ -49,6 +49,7 @@ use tokio::sync::{
 };
 use tokio::task::JoinHandle;
 use tracing::{
+    debug,
     error,
     warn,
 };
@@ -861,7 +862,7 @@ impl ToolManager {
         &self,
         query: &str,
         conversation_context: &str,
-    ) -> Result<HashMap<String, ToolSpec>> {
+    ) -> Result<HashMap<String, ToolSpec>, eyre::Report> {
         use crate::cli::chat::tool_selector::{Model, ToolSelector};
         
         // Get all dynamic servers
@@ -921,7 +922,7 @@ impl ToolManager {
     }
     
     /// Checks if a tool is from a dynamic server
-    fn is_tool_from_dynamic_server(&self, tool_name: &str) -> bool {
+    pub fn is_tool_from_dynamic_server(&self, tool_name: &str) -> bool {
         if let Some(tool_info) = self.tn_map.get(tool_name) {
             if let Some(client) = self.clients.get(&tool_info.server_name) {
                 return client.is_dynamic();
@@ -935,7 +936,7 @@ impl ToolManager {
         &self,
         query: &str,
         conversation_context: &str,
-    ) -> Result<HashMap<String, ToolSpec>> {
+    ) -> Result<HashMap<String, ToolSpec>, eyre::Report> {
         use crate::cli::chat::tool_selector::{Model, ToolSelector};
         
         // Get all dynamic servers
@@ -948,7 +949,7 @@ impl ToolManager {
             
         // Get all modules from dynamic servers
         let mut all_modules = Vec::new();
-        for (server_name, client) in dynamic_servers {
+        for (_server_name, client) in dynamic_servers {
             let modules = client.get_modules().await;
             all_modules.extend(modules);
         }

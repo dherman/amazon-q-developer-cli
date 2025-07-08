@@ -88,7 +88,7 @@ impl ToolSelector {
         conversation_context: &str,
     ) -> Result<Vec<String>> {
         // Generate the prompt for tool selection
-        let prompt = prompt_template::generate_tool_selection_prompt(query, modules, conversation_context);
+        let _prompt = prompt_template::generate_tool_selection_prompt(query, modules, conversation_context);
         
         // TODO: Implement actual model-based selection using the prompt
         // For now, return a placeholder implementation that simulates the model's response
