@@ -865,6 +865,8 @@ impl ToolManager {
     ) -> Result<HashMap<String, ToolSpec>, eyre::Report> {
         use crate::cli::chat::tool_selector::{Model, ToolSelector};
         
+        debug!("Filtering tools dynamically for query: {}", query);
+        
         // Get all dynamic servers
         let dynamic_servers: Vec<(String, Arc<CustomToolClient>)> = self
             .clients
@@ -873,6 +875,11 @@ impl ToolManager {
             .map(|(name, client)| (name.clone(), client.clone()))
             .collect();
             
+        debug!("Found {} dynamic servers", dynamic_servers.len());
+        for (name, _) in &dynamic_servers {
+            debug!("Dynamic server: {}", name);
+        }
+        
         if dynamic_servers.is_empty() {
             // If no dynamic servers, return all tools
             debug!("No dynamic servers found, returning all tools");
@@ -896,7 +903,10 @@ impl ToolManager {
         // Use the tool selector to select relevant modules
         let tool_selector = ToolSelector::new(Model::Claude35Sonnet);
         let selected_tools = match tool_selector.select_tools(query, &all_modules, conversation_context).await {
-            Ok(tools) => tools,
+            Ok(tools) => {
+                debug!("Selected {} tools from modules", tools.len());
+                tools
+            },
             Err(e) => {
                 warn!("Error selecting tools: {}", e);
                 // Return all tools as fallback

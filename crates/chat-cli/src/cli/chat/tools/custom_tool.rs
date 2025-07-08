@@ -83,6 +83,7 @@ impl CustomToolClient {
             disabled: _,
             dynamic,
         } = config;
+        
         let mcp_client_config = McpClientConfig {
             server_name: server_name.clone(),
             bin_path: command.clone(),

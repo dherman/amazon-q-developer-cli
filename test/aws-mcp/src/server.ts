@@ -13,11 +13,13 @@ export class McpServer {
     output: process.stdout,
     terminal: false
   });
+  private running = false;
 
   /**
    * Register a tool with the server
    */
   registerTool(tool: Tool): void {
+    console.error(`Registering tool: ${tool.name}`);
     this.tools.set(tool.name, tool);
   }
 
@@ -25,6 +27,7 @@ export class McpServer {
    * Register a module with the server
    */
   registerModule(module: Module): void {
+    console.error(`Registering module: ${module.name} with ${module.tools.length} tools`);
     this.modules.set(module.name, module);
   }
 
@@ -32,10 +35,27 @@ export class McpServer {
    * Start the server and listen for requests
    */
   start(): void {
+    if (this.running) {
+      console.error('Server is already running');
+      return;
+    }
+    
+    this.running = true;
+    console.error(`Server starting with ${this.tools.size} tools and ${this.modules.size} modules`);
+    
+    // Keep the process alive
+    setInterval(() => {
+      // This empty interval prevents Node.js from exiting
+      // It will run every 60 seconds
+      console.error('Server heartbeat - still alive');
+    }, 60000);
+    
     this.readline.on('line', async (line) => {
       try {
+        console.error(`Received request: ${line.substring(0, 100)}${line.length > 100 ? '...' : ''}`);
         const request = JSON.parse(line);
         const response = await this.handleRequest(request);
+        console.error(`Sending response: ${JSON.stringify(response).substring(0, 100)}...`);
         console.log(JSON.stringify(response));
       } catch (error) {
         console.error('Error processing request:', error);
@@ -50,8 +70,41 @@ export class McpServer {
       }
     });
 
+    // Handle process signals
+    process.on('SIGINT', () => {
+      console.error('Received SIGINT signal, shutting down...');
+      this.stop();
+      process.exit(0);
+    });
+    
+    process.on('SIGTERM', () => {
+      console.error('Received SIGTERM signal, shutting down...');
+      this.stop();
+      process.exit(0);
+    });
+
+    // Handle stdin closing
+    process.stdin.on('end', () => {
+      console.error('stdin stream ended, shutting down...');
+      this.stop();
+      process.exit(0);
+    });
+
     // Log server start
-    console.error('AWS MCP Server started');
+    console.error('AWS MCP Server started and waiting for requests');
+  }
+
+  /**
+   * Stop the server
+   */
+  stop(): void {
+    if (!this.running) {
+      return;
+    }
+    
+    console.error('Stopping server...');
+    this.running = false;
+    this.readline.close();
   }
 
   /**
@@ -59,6 +112,7 @@ export class McpServer {
    */
   private async handleRequest(request: any): Promise<any> {
     const { id, method, params } = request;
+    console.error(`Processing method: ${method}`);
 
     // Basic response structure
     const response = {
@@ -70,10 +124,13 @@ export class McpServer {
       // Handle different methods
       switch (method) {
         case 'tools/list':
+          console.error('Handling tools/list request');
+          const toolDefinitions = this.getToolDefinitions();
+          console.error(`Returning ${toolDefinitions.length} tool definitions`);
           return {
             ...response,
             result: {
-              tools: this.getToolDefinitions(),
+              tools: toolDefinitions,
               _meta: {
                 modules: Array.from(this.modules.values())
               }
@@ -85,6 +142,7 @@ export class McpServer {
             throw new Error('Missing tool name');
           }
 
+          console.error(`Handling tools/call request for tool: ${params.name}`);
           const tool = this.tools.get(params.name);
           if (!tool) {
             throw new Error(`Tool not found: ${params.name}`);
@@ -100,6 +158,7 @@ export class McpServer {
           throw new Error(`Method not found: ${method}`);
       }
     } catch (error: any) {
+      console.error(`Error handling request: ${error.message}`);
       return {
         ...response,
         error: {

@@ -163,7 +163,9 @@ impl Agent {
         match config_path {
             Ok(config_path) => {
                 let content = os.fs.read(&config_path).await?;
-                Ok((serde_json::from_slice::<Agent>(&content)?, config_path))
+                let mut agent = serde_json::from_slice::<Agent>(&content)?;
+                agent.path = Some(config_path.clone());
+                Ok((agent, config_path))
             },
             Err(global_config_dir) if agent_name == "default" => {
                 os.fs
@@ -175,7 +177,8 @@ impl Agent {
                     .await?;
                 os.fs.create_new(&global_config_dir).await?;
 
-                let default_agent = Agent::default();
+                let mut default_agent = Agent::default();
+                default_agent.path = Some(global_config_dir.clone());
                 let content = serde_json::to_string_pretty(&default_agent)?;
                 os.fs.write(&global_config_dir, content.as_bytes()).await?;
 
@@ -442,8 +445,13 @@ impl Agents {
 
         // If we are told which agent to set as active, we will fall back to a default whose
         // lifetime matches that of the session
-        if agent_name.is_none() {
-            local_agents.push(Agent::default());
+        if agent_name.is_none() && !local_agents.iter().any(|a| a.name == "default") {
+            let mut default_agent = Agent::default();
+            // Try to set a path for the default agent
+            if let Ok(path) = directories::chat_global_agent_path(os) {
+                default_agent.path = Some(path.join("default.json"));
+            }
+            local_agents.push(default_agent);
         }
 
         let _ = output.flush();
