@@ -29,10 +29,10 @@
   - [x] Add configuration for tool selector model selection (hardcoded initially)
   - [x] Create prompt templates for tool selection
 
-- [ ] Modify tool manager to support dynamic selection
-  - [ ] Update `ToolManager` to track which servers are dynamic vs. pinned
-  - [ ] Add logic to determine when to trigger tool selection
-  - [ ] Implement caching of tool selection results
+- [x] Modify tool manager to support dynamic selection
+  - [x] Update `ToolManager` to track which servers are dynamic vs. pinned
+  - [x] Add logic to determine when to trigger tool selection
+  - [x] Implement caching of tool selection results
 
 ## Tool Selection Logic
 
@@ -46,9 +46,9 @@
   - [x] Implement relevance scoring mechanism
   - [x] Add filtering based on relevance threshold
 
-- [ ] Add conversation context tracking
-  - [ ] Track conversation history for context-aware selection
-  - [ ] Implement heuristics for when to re-select tools
+- [x] Add conversation context tracking
+  - [x] Track conversation history for context-aware selection
+  - [x] Implement heuristics for when to re-select tools
 
 - [ ] Implement optimization strategies
   - [ ] Add batched processing of modules
@@ -62,9 +62,9 @@
   - [ ] Add `-a, --all` flag to show all tools
   - [ ] Use visual indicators for active vs. inactive tools
 
-- [ ] Add `/tools select` command
-  - [ ] Implement force re-selection of tools
-  - [ ] Add feedback on selection process
+- [x] Add `/tools select` command
+  - [x] Implement force re-selection of tools
+  - [x] Add feedback on selection process
 
 - [ ] Improve status reporting
   - [ ] Add loading indicator during tool selection

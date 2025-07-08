@@ -429,6 +429,59 @@ impl ConversationState {
             .expect("unable to construct conversation state"))
     }
 
+    /// Returns the last user query from the conversation history
+    pub fn last_user_query(&self) -> Option<String> {
+        for message in self.history.iter().rev() {
+            if let ChatMessage::UserInputMessage(user_message) = message {
+                return Some(user_message.content.clone());
+            }
+        }
+        None
+    }
+
+    /// Returns a summary of the conversation context
+    pub fn get_context_summary(&self) -> String {
+        let mut summary = String::new();
+        
+        // Add the last few messages from the conversation history
+        let max_messages = 3;
+        let mut messages = Vec::new();
+        
+        for message in self.history.iter().rev().take(max_messages * 2) {
+            match message {
+                ChatMessage::UserInputMessage(user_message) => {
+                    messages.push(format!("User: {}", user_message.content));
+                },
+                ChatMessage::AssistantResponseMessage(assistant_message) => {
+                    // Truncate long assistant messages
+                    let content = if assistant_message.content.len() > 500 {
+                        format!("{}...", &assistant_message.content[..500])
+                    } else {
+                        assistant_message.content.clone()
+                    };
+                    messages.push(format!("Assistant: {}", content));
+                }
+            }
+            
+            if messages.len() >= max_messages {
+                break;
+            }
+        }
+        
+        // Reverse to get chronological order
+        messages.reverse();
+        
+        // Add messages to summary
+        if !messages.is_empty() {
+            summary.push_str("Recent conversation:\n");
+            for message in messages {
+                summary.push_str(&format!("{}\n", message));
+            }
+        }
+        
+        summary
+    }
+
     pub async fn update_state(&mut self, force_update: bool) {
         let needs_update = self.tool_manager.has_new_stuff.load(Ordering::Acquire) || force_update;
         if !needs_update {

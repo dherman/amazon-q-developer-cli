@@ -200,6 +200,32 @@ impl CustomToolClient {
         }
     }
 
+    pub fn is_dynamic(&self) -> bool {
+        match self {
+            CustomToolClient::Stdio { dynamic, .. } => *dynamic,
+        }
+    }
+
+    pub async fn get_server_metadata(&self) -> Option<crate::mcp_client::ServerMetadata> {
+        match self {
+            CustomToolClient::Stdio { server_metadata, .. } => {
+                server_metadata.read().await.clone()
+            },
+        }
+    }
+
+    pub async fn get_modules(&self) -> Vec<crate::mcp_client::Module> {
+        match self {
+            CustomToolClient::Stdio { server_metadata, .. } => {
+                if let Some(metadata) = server_metadata.read().await.as_ref() {
+                    metadata.modules.clone()
+                } else {
+                    Vec::new()
+                }
+            },
+        }
+    }
+    
     pub fn prompts_updated(&self) {
         match self {
             CustomToolClient::Stdio { client, .. } => client.is_prompts_out_of_date.store(false, Ordering::Relaxed),

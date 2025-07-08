@@ -856,6 +856,125 @@ impl Clone for ToolManager {
 }
 
 impl ToolManager {
+    /// Filters tools based on dynamic selection
+    pub async fn filter_tools_dynamically(
+        &self,
+        query: &str,
+        conversation_context: &str,
+    ) -> Result<HashMap<String, ToolSpec>> {
+        use crate::cli::chat::tool_selector::{Model, ToolSelector};
+        
+        // Get all dynamic servers
+        let dynamic_servers: Vec<(String, Arc<CustomToolClient>)> = self
+            .clients
+            .iter()
+            .filter(|(_, client)| client.is_dynamic())
+            .map(|(name, client)| (name.clone(), client.clone()))
+            .collect();
+            
+        if dynamic_servers.is_empty() {
+            // If no dynamic servers, return all tools
+            debug!("No dynamic servers found, returning all tools");
+            return Ok(self.schema.clone());
+        }
+        
+        // Get all modules from dynamic servers
+        let mut all_modules = Vec::new();
+        for (server_name, client) in dynamic_servers {
+            let modules = client.get_modules().await;
+            debug!("Server {} has {} modules", server_name, modules.len());
+            all_modules.extend(modules);
+        }
+        
+        if all_modules.is_empty() {
+            // If no modules, return all tools
+            debug!("No modules found in dynamic servers, returning all tools");
+            return Ok(self.schema.clone());
+        }
+        
+        // Use the tool selector to select relevant modules
+        let tool_selector = ToolSelector::new(Model::Claude35Sonnet);
+        let selected_tools = match tool_selector.select_tools(query, &all_modules, conversation_context).await {
+            Ok(tools) => tools,
+            Err(e) => {
+                warn!("Error selecting tools: {}", e);
+                // Return all tools as fallback
+                return Ok(self.schema.clone());
+            }
+        };
+        
+        // Filter the schema to only include selected tools and tools from non-dynamic servers
+        let mut filtered_schema = HashMap::new();
+        for (name, spec) in &self.schema {
+            if selected_tools.contains(name) || !self.is_tool_from_dynamic_server(name) {
+                filtered_schema.insert(name.clone(), spec.clone());
+            }
+        }
+        
+        debug!(
+            "Filtered tools from {} to {} based on query",
+            self.schema.len(),
+            filtered_schema.len()
+        );
+        
+        Ok(filtered_schema)
+    }
+    
+    /// Checks if a tool is from a dynamic server
+    fn is_tool_from_dynamic_server(&self, tool_name: &str) -> bool {
+        if let Some(tool_info) = self.tn_map.get(tool_name) {
+            if let Some(client) = self.clients.get(&tool_info.server_name) {
+                return client.is_dynamic();
+            }
+        }
+        false
+    }
+    
+    /// Forces re-selection of tools
+    pub async fn force_select_tools(
+        &self,
+        query: &str,
+        conversation_context: &str,
+    ) -> Result<HashMap<String, ToolSpec>> {
+        use crate::cli::chat::tool_selector::{Model, ToolSelector};
+        
+        // Get all dynamic servers
+        let dynamic_servers: Vec<(String, Arc<CustomToolClient>)> = self
+            .clients
+            .iter()
+            .filter(|(_, client)| client.is_dynamic())
+            .map(|(name, client)| (name.clone(), client.clone()))
+            .collect();
+            
+        // Get all modules from dynamic servers
+        let mut all_modules = Vec::new();
+        for (server_name, client) in dynamic_servers {
+            let modules = client.get_modules().await;
+            all_modules.extend(modules);
+        }
+        
+        // Use the tool selector to force re-selection of tools
+        let tool_selector = ToolSelector::new(Model::Claude35Sonnet);
+        let selected_tools = match tool_selector.force_select_tools(query, &all_modules, conversation_context).await {
+            Ok(tools) => tools,
+            Err(e) => {
+                warn!("Error forcing tool selection: {}", e);
+                // Return all tools as fallback
+                return Ok(self.schema.clone());
+            }
+        };
+        
+        // Filter the schema to only include selected tools and tools from non-dynamic servers
+        let mut filtered_schema = HashMap::new();
+        for (name, spec) in &self.schema {
+            if selected_tools.contains(name) || !self.is_tool_from_dynamic_server(name) {
+                filtered_schema.insert(name.clone(), spec.clone());
+            }
+        }
+        
+        Ok(filtered_schema)
+    }
+
     pub async fn load_tools(
         &mut self,
         os: &mut Os,

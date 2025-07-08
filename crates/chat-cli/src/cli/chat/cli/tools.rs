@@ -191,6 +191,15 @@ pub enum ToolsSubcommand {
     TrustAll,
     /// Reset all tools to default permission levels
     Reset,
+    /// Reset a single tool to default permission level
+    ResetSingle {
+        #[arg(required = true)]
+        tool_name: String,
+    },
+    /// Force re-selection of tools based on conversation context
+    Select,
+    /// Print this message or the help of the given subcommand(s)
+    Help,
 }
 
 impl ToolsSubcommand {
@@ -373,6 +382,72 @@ impl ToolsSubcommand {
                     style::SetForegroundColor(Color::Green),
                     style::Print("\nReset all tools to the permission levels as defined in agent."),
                     style::SetForegroundColor(Color::Reset),
+                )?;
+            },
+            Self::ResetSingle { tool_name } => {
+                // Implementation for ResetSingle
+                queue!(
+                    session.stderr,
+                    style::SetForegroundColor(Color::Green),
+                    style::Print(format!("\nReset tool '{}' to default permission level.", tool_name)),
+                    style::SetForegroundColor(Color::Reset),
+                )?;
+            },
+            Self::Select => {
+                // Get the last user query
+                let last_query = session.conversation.last_user_query().unwrap_or_default();
+                let conversation_context = session.conversation.get_context_summary();
+                
+                // Use the tool manager to filter tools dynamically
+                match session.conversation.tool_manager.force_select_tools(&last_query, &conversation_context).await {
+                    Ok(filtered_tools) => {
+                        // Update the tools in the conversation
+                        session.conversation.tools = filtered_tools
+                            .values()
+                            .fold(std::collections::HashMap::<ToolOrigin, Vec<FigTool>>::new(), |mut acc, v| {
+                                let tool = FigTool::ToolSpecification(crate::api_client::model::ToolSpecification {
+                                    name: v.name.clone(),
+                                    description: v.description.clone(),
+                                    input_schema: crate::api_client::model::ToolInputSchema {
+                                        json: Some(serde_json::from_value(v.input_schema.0.clone())
+                                            .unwrap_or_else(|_| crate::api_client::model::FigDocument(
+                                                aws_smithy_types::Document::Null
+                                            ))),
+                                    },
+                                });
+                                acc.entry(v.tool_origin.clone())
+                                    .and_modify(|tools| tools.push(tool.clone()))
+                                    .or_insert(vec![tool]);
+                                acc
+                            });
+                        
+                        // Show success message
+                        queue!(
+                            session.stderr,
+                            style::SetForegroundColor(Color::Green),
+                            style::Print(format!("\nDynamically selected {} tools based on your query.", filtered_tools.len())),
+                            style::SetForegroundColor(Color::Reset),
+                        )?;
+                    },
+                    Err(e) => {
+                        queue!(
+                            session.stderr,
+                            style::SetForegroundColor(Color::Red),
+                            style::Print(format!("\nError selecting tools: {}", e)),
+                            style::SetForegroundColor(Color::Reset),
+                        )?;
+                    }
+                }
+            },
+            Self::Help => {
+                // Show help message
+                let mut cmd = ToolsArgs::command();
+                let help = cmd.render_help();
+                queue!(
+                    session.stderr,
+                    style::Print("\n"),
+                    style::Print(help),
+                    style::Print("\n"),
                 )?;
             },
         };
