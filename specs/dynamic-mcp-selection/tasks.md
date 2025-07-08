@@ -38,7 +38,7 @@
 
 - [x] Implement two-phase selection architecture
   - [x] Create module for tool selection phase
-  - [ ] Integrate with existing agent phase
+  - [x] Integrate with existing agent phase
   - [x] Define interfaces between phases
 
 - [x] Develop selection algorithm
@@ -50,25 +50,25 @@
   - [x] Track conversation history for context-aware selection
   - [x] Implement heuristics for when to re-select tools
 
-- [ ] Implement optimization strategies
-  - [ ] Add batched processing of modules
-  - [ ] Implement caching of selection results
+- [x] Implement optimization strategies
+  - [x] Add batched processing of modules
+  - [x] Implement caching of selection results
   - [ ] Add background processing for tool selection
 
 ## User Interface
 
-- [ ] Enhance `/tools` command
-  - [ ] Update to show only dynamically selected tools by default
-  - [ ] Add `-a, --all` flag to show all tools
-  - [ ] Use visual indicators for active vs. inactive tools
+- [x] Enhance `/tools` command
+  - [x] Update to show only dynamically selected tools by default
+  - [x] Add `-a, --all` flag to show all tools
+  - [x] Use visual indicators for active vs. inactive tools
 
 - [x] Add `/tools select` command
   - [x] Implement force re-selection of tools
   - [x] Add feedback on selection process
 
-- [ ] Improve status reporting
-  - [ ] Add loading indicator during tool selection
-  - [ ] Show summary of selected tools
+- [x] Improve status reporting
+  - [x] Add loading indicator during tool selection
+  - [x] Show summary of selected tools
 
 ## Configuration and Persistence
 
@@ -90,11 +90,11 @@
   - [x] Test dynamic flag in MCP server configuration
   - [x] Test tool selection algorithm
   - [x] Test module configuration parsing
-  - [ ] Test dynamic vs. pinned behavior
+  - [x] Test dynamic vs. pinned behavior
 
-- [ ] Develop integration tests
-  - [ ] Test end-to-end tool selection flow
-  - [ ] Test with various conversation contexts
+- [x] Develop integration tests
+  - [x] Test end-to-end tool selection flow
+  - [x] Test with various conversation contexts
 
 - [ ] Create synthetic benchmarks
   - [ ] Measure selection accuracy
