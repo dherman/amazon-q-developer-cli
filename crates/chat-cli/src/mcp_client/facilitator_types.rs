@@ -245,4 +245,7 @@ pub struct ServerCapabilities {
     /// Configuration for tool integration capabilities
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tools: Option<serde_json::Value>,
+    /// Server metadata including module definitions
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
 }

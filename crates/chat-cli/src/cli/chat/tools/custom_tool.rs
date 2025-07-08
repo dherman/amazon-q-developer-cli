@@ -65,6 +65,10 @@ pub enum CustomToolClient {
         server_name: String,
         client: McpClient<StdioTransport>,
         server_capabilities: RwLock<Option<ServerCapabilities>>,
+        /// Whether this server's tools should be dynamically selected
+        dynamic: bool,
+        /// Server metadata including module definitions
+        server_metadata: RwLock<Option<crate::mcp_client::ServerMetadata>>,
     },
 }
 
@@ -77,7 +81,7 @@ impl CustomToolClient {
             env,
             timeout,
             disabled: _,
-            dynamic: _,
+            dynamic,
         } = config;
         let mcp_client_config = McpClientConfig {
             server_name: server_name.clone(),
@@ -95,6 +99,8 @@ impl CustomToolClient {
             server_name,
             client,
             server_capabilities: RwLock::new(None),
+            dynamic,
+            server_metadata: RwLock::new(None),
         })
     }
 
@@ -103,6 +109,8 @@ impl CustomToolClient {
             CustomToolClient::Stdio {
                 client,
                 server_capabilities,
+                server_metadata,
+                server_name,
                 ..
             } => {
                 if let Some(messenger) = &client.messenger {
@@ -111,6 +119,40 @@ impl CustomToolClient {
                 // We'll need to first initialize. This is the handshake every client and server
                 // needs to do before proceeding to anything else
                 let cap = client.init().await?;
+                
+                // Parse and store server metadata if available
+                if let Some(metadata_value) = &cap.metadata {
+                    match serde_json::from_value::<crate::mcp_client::ServerMetadata>(metadata_value.clone()) {
+                        Ok(metadata) => {
+                            // Validate the metadata
+                            if let Err(errors) = metadata.validate() {
+                                for (module_name, error) in errors {
+                                    tracing::warn!(
+                                        "Invalid module '{}' in server {}: {}",
+                                        module_name, server_name, error
+                                    );
+                                }
+                                // Even with validation errors, we still store the metadata
+                                // as some modules might be valid
+                                server_metadata.write().await.replace(metadata);
+                            } else {
+                                tracing::debug!(
+                                    "Server {} has {} valid modules",
+                                    server_name,
+                                    metadata.modules.len()
+                                );
+                                server_metadata.write().await.replace(metadata);
+                            }
+                        },
+                        Err(e) => {
+                            tracing::warn!(
+                                "Failed to parse metadata for server {}: {}",
+                                server_name, e
+                            );
+                        }
+                    }
+                }
+                
                 // We'll be scrapping this for background server load: https://github.com/aws/amazon-q-developer-cli/issues/1466
                 // So don't worry about the tidiness for now
                 server_capabilities.write().await.replace(cap);
@@ -161,6 +203,32 @@ impl CustomToolClient {
     pub fn prompts_updated(&self) {
         match self {
             CustomToolClient::Stdio { client, .. } => client.is_prompts_out_of_date.store(false, Ordering::Relaxed),
+        }
+    }
+    
+    pub fn is_dynamic(&self) -> bool {
+        match self {
+            CustomToolClient::Stdio { dynamic, .. } => *dynamic,
+        }
+    }
+
+    pub async fn get_server_metadata(&self) -> Option<crate::mcp_client::ServerMetadata> {
+        match self {
+            CustomToolClient::Stdio { server_metadata, .. } => {
+                server_metadata.read().await.clone()
+            },
+        }
+    }
+
+    pub async fn get_modules(&self) -> Vec<crate::mcp_client::Module> {
+        match self {
+            CustomToolClient::Stdio { server_metadata, .. } => {
+                if let Some(metadata) = server_metadata.read().await.as_ref() {
+                    metadata.modules.clone()
+                } else {
+                    Vec::new()
+                }
+            },
         }
     }
 }

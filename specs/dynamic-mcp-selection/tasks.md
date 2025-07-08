@@ -18,10 +18,10 @@
   - [x] Modify `AddArgs` in `mcp.rs` to accept a `--dynamic` flag
   - [x] Update `add` command implementation to handle the new flag
 
-- [ ] Implement module metadata format
-  - [ ] Define JSON schema for modules in `_meta` field
-  - [ ] Add validation for module definitions when loading MCP servers
-  - [ ] Create data structures to represent modules and their relationships to tools
+- [x] Implement module metadata format
+  - [x] Define JSON schema for modules in `_meta` field
+  - [x] Add validation for module definitions when loading MCP servers
+  - [x] Create data structures to represent modules and their relationships to tools
 
 - [ ] Create tool selector infrastructure
   - [ ] Define `ToolSelector` trait for abstraction

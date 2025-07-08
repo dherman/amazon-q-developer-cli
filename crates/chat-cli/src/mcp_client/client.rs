@@ -42,6 +42,7 @@ use super::{
     ResourceTemplatesListResult,
     ResourcesListResult,
     ServerCapabilities,
+    ServerMetadata,
     ToolsListResult,
 };
 use crate::util::process::{
@@ -337,6 +338,36 @@ where
                 .clone();
             serde_json::from_value::<ServerCapabilities>(cap)?
         };
+        
+        // Parse server metadata if available
+        if let Some(metadata_value) = &cap.metadata {
+            match serde_json::from_value::<ServerMetadata>(metadata_value.clone()) {
+                Ok(metadata) => {
+                    // Validate the metadata
+                    if let Err(errors) = metadata.validate() {
+                        for (module_name, error) in errors {
+                            tracing::warn!(
+                                "Invalid module '{}' in server {}: {}",
+                                module_name, self.server_name, error
+                            );
+                        }
+                    } else {
+                        tracing::debug!(
+                            "Server {} has {} valid modules",
+                            self.server_name,
+                            metadata.modules.len()
+                        );
+                    }
+                },
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to parse metadata for server {}: {}",
+                        self.server_name, e
+                    );
+                }
+            }
+        }
+        
         self.notify("initialized", None).await?;
 
         // TODO: group this into examine_server_capabilities
