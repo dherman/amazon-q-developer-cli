@@ -101,6 +101,9 @@ pub struct AddArgs {
     /// Whether the server should be disabled (not loaded)
     #[arg(long, default_value_t = false)]
     pub disabled: bool,
+    /// Whether the server's tools should be dynamically selected based on conversation context
+    #[arg(long, default_value_t = false)]
+    pub dynamic: bool,
     /// Overwrite an existing server with the same name
     #[arg(long, default_value_t = false)]
     pub force: bool,
@@ -128,6 +131,7 @@ impl AddArgs {
             "env": merged_env,
             "timeout": self.timeout.unwrap_or(default_timeout()),
             "disabled": self.disabled,
+            "dynamic": self.dynamic,
         }))?;
 
         writeln!(
@@ -292,6 +296,7 @@ impl StatusArgs {
                     style::Print(format!("Command : {}\n", cfg.command)),
                     style::Print(format!("Timeout : {} ms\n", cfg.timeout)),
                     style::Print(format!("Disabled: {}\n", cfg.disabled)),
+                    style::Print(format!("Dynamic : {}\n", cfg.dynamic)),
                     style::Print(format!(
                         "Env Vars: {}\n",
                         cfg.env
@@ -465,6 +470,7 @@ mod tests {
             timeout: None,
             agent: None,
             disabled: false,
+            dynamic: false,
             force: false,
         }
         .execute(&os, &mut vec![])
@@ -502,7 +508,8 @@ mod tests {
                 "--args",
                 "awslabs.eks-mcp-server,--allow-write,--allow-sensitive-data-access",
                 "--env",
-                "key1=value1,key2=value2"
+                "key1=value1,key2=value2",
+                "--dynamic"
             ],
             RootSubcommand::Mcp(McpSubcommand::Add(AddArgs {
                 name: "test_server".to_string(),
@@ -523,6 +530,7 @@ mod tests {
                 ],
                 timeout: None,
                 disabled: false,
+                dynamic: true,
                 force: false,
             }))
         );

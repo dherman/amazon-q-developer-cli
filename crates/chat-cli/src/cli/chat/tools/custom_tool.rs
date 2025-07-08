@@ -48,6 +48,10 @@ pub struct CustomToolConfig {
     pub timeout: u64,
     #[serde(default)]
     pub disabled: bool,
+    /// When true, this server's tools will be dynamically selected based on the conversation context.
+    /// When false or not specified, all tools from this server will always be included (pinned).
+    #[serde(default)]
+    pub dynamic: bool,
 }
 
 pub fn default_timeout() -> u64 {
@@ -73,6 +77,7 @@ impl CustomToolClient {
             env,
             timeout,
             disabled: _,
+            dynamic: _,
         } = config;
         let mcp_client_config = McpClientConfig {
             server_name: server_name.clone(),

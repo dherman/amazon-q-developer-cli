@@ -12,11 +12,11 @@
 
 ## Core Architecture
 
-- [ ] Add `dynamic` flag to MCP server configuration
-  - [ ] Update `McpServerConfig` struct to include a `dynamic` boolean field
-  - [ ] Update MCP server configuration serialization/deserialization
-  - [ ] Modify `AddArgs` in `mcp.rs` to accept a `--dynamic` flag
-  - [ ] Update `add` command implementation to handle the new flag
+- [x] Add `dynamic` flag to MCP server configuration
+  - [x] Update `McpServerConfig` struct to include a `dynamic` boolean field
+  - [x] Update MCP server configuration serialization/deserialization
+  - [x] Modify `AddArgs` in `mcp.rs` to accept a `--dynamic` flag
+  - [x] Update `add` command implementation to handle the new flag
 
 - [ ] Implement module metadata format
   - [ ] Define JSON schema for modules in `_meta` field
@@ -72,9 +72,9 @@
 
 ## Configuration and Persistence
 
-- [ ] Update configuration file format
-  - [ ] Add `dynamic` field to server configuration
-  - [ ] Ensure backward compatibility
+- [x] Update configuration file format
+  - [x] Add `dynamic` field to server configuration
+  - [x] Ensure backward compatibility
 
 - [ ] Implement module configuration validation
   - [ ] Validate module definitions against schema
@@ -86,7 +86,8 @@
 
 ## Testing and Evaluation
 
-- [ ] Create unit tests
+- [x] Create unit tests
+  - [x] Test dynamic flag in MCP server configuration
   - [ ] Test tool selection algorithm
   - [ ] Test module configuration parsing
   - [ ] Test dynamic vs. pinned behavior
