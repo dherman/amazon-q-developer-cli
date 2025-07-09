@@ -29,6 +29,13 @@
   - [x] Add configuration for tool selector model selection (hardcoded initially)
   - [x] Create prompt templates for tool selection
 
+- [x] Integrate server instructions
+  - [x] Update ServerCapabilities to include instructions field
+  - [x] Update ServerMetadata to include instructions field
+  - [x] Modify CustomToolClient to store and retrieve server instructions
+  - [x] Update prompt template to include server instructions
+  - [x] Update tool selector to use server instructions for better selection
+
 - [x] Modify tool manager to support dynamic selection
   - [x] Update `ToolManager` to track which servers are dynamic vs. pinned
   - [x] Add logic to determine when to trigger tool selection
@@ -107,8 +114,10 @@
   - [ ] Document `--dynamic` flag for MCP servers
   - [ ] Document `/tools` command enhancements
   - [ ] Provide examples of module definitions
+  - [ ] Document server instructions feature
 
 - [ ] Create developer documentation
   - [ ] Document tool selection architecture
   - [ ] Document module configuration format
   - [ ] Provide examples for MCP server authors
+  - [ ] Document how to use server instructions

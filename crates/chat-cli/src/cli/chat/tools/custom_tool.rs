@@ -124,7 +124,13 @@ impl CustomToolClient {
                 // Parse and store server metadata if available
                 if let Some(metadata_value) = &cap.metadata {
                     match serde_json::from_value::<crate::mcp_client::ServerMetadata>(metadata_value.clone()) {
-                        Ok(metadata) => {
+                        Ok(mut metadata) => {
+                            // Store instructions if available
+                            if let Some(instructions) = &cap.instructions {
+                                metadata.instructions = Some(instructions.clone());
+                                tracing::debug!("Server {} has instructions", server_name);
+                            }
+                            
                             // Validate the metadata
                             if let Err(errors) = metadata.validate() {
                                 for (module_name, error) in errors {
@@ -150,8 +156,22 @@ impl CustomToolClient {
                                 "Failed to parse metadata for server {}: {}",
                                 server_name, e
                             );
+                            
+                            // Even if we couldn't parse the metadata, we might still have instructions
+                            if let Some(instructions) = &cap.instructions {
+                                let mut metadata = crate::mcp_client::ServerMetadata::default();
+                                metadata.instructions = Some(instructions.clone());
+                                server_metadata.write().await.replace(metadata);
+                                tracing::debug!("Server {} has instructions but invalid metadata", server_name);
+                            }
                         }
                     }
+                } else if let Some(instructions) = &cap.instructions {
+                    // If there's no metadata but there are instructions, create a metadata object with just instructions
+                    let mut metadata = crate::mcp_client::ServerMetadata::default();
+                    metadata.instructions = Some(instructions.clone());
+                    server_metadata.write().await.replace(metadata);
+                    tracing::debug!("Server {} has instructions but no metadata", server_name);
                 }
                 
                 // We'll be scrapping this for background server load: https://github.com/aws/amazon-q-developer-cli/issues/1466
@@ -201,6 +221,18 @@ impl CustomToolClient {
         }
     }
 
+    pub async fn get_instructions(&self) -> Option<String> {
+        match self {
+            CustomToolClient::Stdio { server_metadata, .. } => {
+                if let Some(metadata) = server_metadata.read().await.as_ref() {
+                    metadata.instructions.clone()
+                } else {
+                    None
+                }
+            },
+        }
+    }
+    
     pub fn is_dynamic(&self) -> bool {
         match self {
             CustomToolClient::Stdio { dynamic, .. } => *dynamic,

@@ -32,6 +32,10 @@ pub struct ServerMetadata {
     #[serde(default)]
     pub modules: Vec<Module>,
     
+    /// Server instructions for tool selection
+    #[serde(default)]
+    pub instructions: Option<String>,
+    
     /// Additional metadata fields that might be added in the future
     #[serde(flatten)]
     pub additional_fields: HashMap<String, serde_json::Value>,
@@ -172,6 +176,7 @@ mod tests {
                     resources: vec![],
                 },
             ],
+            instructions: None,
             additional_fields: HashMap::new(),
         };
         
@@ -197,6 +202,7 @@ mod tests {
                     resources: vec![],
                 },
             ],
+            instructions: None,
             additional_fields: HashMap::new(),
         };
         
@@ -233,6 +239,7 @@ mod tests {
                     resources: vec![],
                 },
             ],
+            instructions: None,
             additional_fields: {
                 let mut map = HashMap::new();
                 map.insert("version".to_string(), serde_json::json!("1.0.0"));
