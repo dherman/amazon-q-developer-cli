@@ -32,6 +32,34 @@ export class McpServer {
   }
 
   /**
+   * Get the number of tools registered
+   */
+  getToolCount(): number {
+    return this.tools.size;
+  }
+
+  /**
+   * Get the number of modules registered
+   */
+  getModuleCount(): number {
+    return this.modules.size;
+  }
+
+  /**
+   * Get all modules
+   */
+  getAllModules(): Module[] {
+    return Array.from(this.modules.values());
+  }
+
+  /**
+   * Get all tools
+   */
+  getAllTools(): Tool[] {
+    return Array.from(this.tools.values());
+  }
+
+  /**
    * Start the server and listen for requests
    */
   start(): void {
@@ -123,6 +151,23 @@ export class McpServer {
     try {
       // Handle different methods
       switch (method) {
+        case 'initialize':
+          console.error('Handling initialize request');
+          return {
+            ...response,
+            result: {
+              capabilities: {
+                tools: {},
+                prompts: {},
+                resources: {},
+                resourceTemplates: {},
+                metadata: {
+                  modules: Array.from(this.modules.values())
+                }
+              }
+            }
+          };
+          
         case 'tools/list':
           console.error('Handling tools/list request');
           const toolDefinitions = this.getToolDefinitions();
@@ -173,11 +218,17 @@ export class McpServer {
    * Get all tool definitions for tools/list response
    */
   private getToolDefinitions(): any[] {
-    return Array.from(this.tools.values()).map(tool => ({
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.parameters
-    }));
+    console.error(`Getting tool definitions for ${this.tools.size} tools`);
+    const toolDefs = Array.from(this.tools.values()).map(tool => {
+      console.error(`Processing tool: ${tool.name}`);
+      return {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters
+      };
+    });
+    console.error(`Returning ${toolDefs.length} tool definitions`);
+    return toolDefs;
   }
 }
 

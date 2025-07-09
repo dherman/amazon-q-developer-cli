@@ -358,6 +358,7 @@ impl ToolManagerBuilder {
             let mut record_temp_buf = Vec::<u8>::new();
             let mut initialized = HashSet::<String>::new();
 
+            #[derive(Debug)]
             enum ToolFilter {
                 All,
                 List(HashSet<String>),
@@ -365,10 +366,12 @@ impl ToolManagerBuilder {
 
             impl ToolFilter {
                 pub fn should_include(&self, tool_name: &str) -> bool {
-                    match self {
+                    let result = match self {
                         Self::All => true,
                         Self::List(set) => set.contains(tool_name),
-                    }
+                    };
+                    debug!("ToolFilter::should_include({}) = {} (filter: {:?})", tool_name, result, self);
+                    result
                 }
             }
 
@@ -395,8 +398,10 @@ impl ToolManagerBuilder {
                             let tool_filter = if agent_lock.tools.len() == 1
                                 && agent_lock.tools.first().map(String::as_str).is_some_and(|c| c == "*")
                             {
+                                debug!("Using ToolFilter::All for server {}", server_name);
                                 ToolFilter::All
                             } else {
+                                debug!("Agent tools list: {:?}", agent_lock.tools);
                                 let set = agent_lock
                                     .tools
                                     .iter()
@@ -410,9 +415,13 @@ impl ToolManagerBuilder {
                                     })
                                     .collect::<HashSet<_>>();
 
+                                debug!("Filtered tool set for server {}: {:?}", server_name, set);
+
                                 if set.contains("*") {
+                                    debug!("Using ToolFilter::All for server {} (contains *)", server_name);
                                     ToolFilter::All
                                 } else {
+                                    debug!("Using ToolFilter::List for server {} with {} tools", server_name, set.len());
                                     ToolFilter::List(set)
                                 }
                             };
@@ -437,12 +446,29 @@ impl ToolManagerBuilder {
 
                         match result {
                             Ok(result) => {
-                                let mut specs = result
-                                    .tools
-                                    .into_iter()
-                                    .filter_map(|v| serde_json::from_value::<ToolSpec>(v).ok())
-                                    .filter(|spec| tool_filter.should_include(&spec.name))
-                                    .collect::<Vec<_>>();
+                                debug!("Processing tools list result for server {}: {} tools", server_name, result.tools.len());
+                                
+                                let mut specs = Vec::new();
+                                for (i, tool_value) in result.tools.into_iter().enumerate() {
+                                    debug!("Processing tool {}: {}", i, serde_json::to_string(&tool_value).unwrap_or_else(|_| "invalid json".to_string()));
+                                    
+                                    match serde_json::from_value::<ToolSpec>(tool_value) {
+                                        Ok(spec) => {
+                                            debug!("Successfully parsed tool spec: {}", spec.name);
+                                            if tool_filter.should_include(&spec.name) {
+                                                debug!("Tool {} passes filter", spec.name);
+                                                specs.push(spec);
+                                            } else {
+                                                debug!("Tool {} filtered out", spec.name);
+                                            }
+                                        }
+                                        Err(e) => {
+                                            debug!("Failed to parse tool spec: {}", e);
+                                        }
+                                    }
+                                }
+                                
+                                debug!("Final specs count for server {}: {}", server_name, specs.len());
                                 let mut sanitized_mapping = HashMap::<ModelToolName, ToolInfo>::new();
                                 let process_result = process_tool_specs(
                                     conv_id_clone.as_str(),
@@ -891,6 +917,12 @@ impl ToolManager {
         for (server_name, client) in dynamic_servers {
             let modules = client.get_modules().await;
             debug!("Server {} has {} modules", server_name, modules.len());
+            for module in &modules {
+                debug!("Module: {} with {} tools", module.name, module.tools.len());
+                for tool in &module.tools {
+                    debug!("Tool: {}", tool);
+                }
+            }
             all_modules.extend(modules);
         }
         
@@ -905,6 +937,9 @@ impl ToolManager {
         let selected_tools = match tool_selector.select_tools(query, &all_modules, conversation_context).await {
             Ok(tools) => {
                 debug!("Selected {} tools from modules", tools.len());
+                for tool in &tools {
+                    debug!("Selected tool: {}", tool);
+                }
                 tools
             },
             Err(e) => {
@@ -916,9 +951,18 @@ impl ToolManager {
         
         // Filter the schema to only include selected tools and tools from non-dynamic servers
         let mut filtered_schema = HashMap::new();
+        
+        debug!("Current schema has {} tools", self.schema.len());
+        for (name, _) in &self.schema {
+            debug!("Schema contains tool: {}", name);
+        }
+        
         for (name, spec) in &self.schema {
             if selected_tools.contains(name) || !self.is_tool_from_dynamic_server(name) {
+                debug!("Including tool in filtered schema: {}", name);
                 filtered_schema.insert(name.clone(), spec.clone());
+            } else {
+                debug!("Excluding tool from filtered schema: {}", name);
             }
         }
         
@@ -933,11 +977,21 @@ impl ToolManager {
     
     /// Checks if a tool is from a dynamic server
     pub fn is_tool_from_dynamic_server(&self, tool_name: &str) -> bool {
+        debug!("Checking if tool {} is from a dynamic server", tool_name);
+        
         if let Some(tool_info) = self.tn_map.get(tool_name) {
+            debug!("Tool {} is from server {}", tool_name, tool_info.server_name);
             if let Some(client) = self.clients.get(&tool_info.server_name) {
-                return client.is_dynamic();
+                let is_dynamic = client.is_dynamic();
+                debug!("Server {} is dynamic: {}", tool_info.server_name, is_dynamic);
+                return is_dynamic;
+            } else {
+                debug!("No client found for server {}", tool_info.server_name);
             }
+        } else {
+            debug!("Tool {} not found in tn_map", tool_name);
         }
+        
         false
     }
     

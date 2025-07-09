@@ -300,7 +300,7 @@ where
             loop {
                 match log_listener.recv().await {
                     Ok(msg) => {
-                        tracing::trace!(target: "mcp", "{server_name} logged {}", msg);
+                        tracing::info!(target: "mcp", "{server_name} logged {}", msg);
                     },
                     Err(e) => {
                         tracing::error!(

@@ -91,6 +91,82 @@ impl ToolsArgs {
 
         let mut origin_tools: Vec<_> = session.conversation.tools.iter().collect();
 
+        // If showing all tools, we need to also include tools from dynamic servers that aren't currently selected
+        let additional_dynamic_tools = if self.all {
+            let mut additional = std::collections::HashMap::new();
+            
+            // For dynamic servers, we need to directly query them for their tools
+            // since they don't load tools into tn_map until they're selected
+            for (server_name, client) in &session.conversation.tool_manager.clients {
+                if client.is_dynamic() {
+                    // Query the server directly for its tools
+                    match client.request("tools/list", None).await {
+                        Ok(response) => {
+                            if let Some(result) = response.result {
+                                if let Ok(tools_result) = serde_json::from_value::<crate::mcp_client::facilitator_types::ToolsListResult>(result) {
+                                    // Define a temporary structure that matches the MCP server's tool format
+                                    #[derive(serde::Deserialize)]
+                                    struct McpToolSpec {
+                                        name: String,
+                                        description: String,
+                                        #[allow(dead_code)]
+                                        parameters: serde_json::Value,
+                                    }
+                                    
+                                    for tool_value in tools_result.tools {
+                                        if let Ok(mcp_spec) = serde_json::from_value::<McpToolSpec>(tool_value) {
+                                            // Create the model tool name (with server prefix)
+                                            let model_tool_name = format!("@{}___{}", server_name, mcp_spec.name);
+                                            
+                                            // Check if this tool is already in the selected tools
+                                            let is_already_selected = session.conversation.tools
+                                                .values()
+                                                .flat_map(|tools| tools.iter())
+                                                .any(|FigTool::ToolSpecification(tool_spec)| tool_spec.name == model_tool_name);
+                                            
+                                            if !is_already_selected {
+                                                // Create a FigTool for this unselected dynamic tool
+                                                let fig_tool = FigTool::ToolSpecification(crate::api_client::model::ToolSpecification {
+                                                    name: model_tool_name,
+                                                    description: if mcp_spec.description.is_empty() {
+                                                        format!("Tool from dynamic server {}", server_name)
+                                                    } else {
+                                                        mcp_spec.description
+                                                    },
+                                                    input_schema: crate::api_client::model::ToolInputSchema {
+                                                        json: None,
+                                                    },
+                                                });
+                                                
+                                                let origin = ToolOrigin::McpServer(server_name.clone());
+                                                additional
+                                                    .entry(origin)
+                                                    .or_insert_with(Vec::new)
+                                                    .push(fig_tool);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Err(_e) => {
+                            // Silently ignore errors when querying dynamic servers
+                        }
+                    }
+                }
+            }
+            
+            additional
+        } else {
+            std::collections::HashMap::new()
+        };
+        
+        // Convert additional_dynamic_tools to the same format as origin_tools
+        let additional_refs: Vec<_> = additional_dynamic_tools.iter().collect();
+        
+        // Combine both regular tools and additional dynamic tools
+        origin_tools.extend(additional_refs);
+
         // Built in tools always appear first.
         origin_tools.sort_by(|(origin_a, _), (origin_b, _)| match (origin_a, origin_b) {
             (ToolOrigin::Native, _) => std::cmp::Ordering::Less,
@@ -98,23 +174,31 @@ impl ToolsArgs {
             (ToolOrigin::McpServer(name_a), ToolOrigin::McpServer(name_b)) => name_a.cmp(name_b),
         });
 
-        // Get the list of dynamically selected tools
-        let dynamically_selected_tools = if !self.all {
-            // Get the tools that are currently selected
-            session.conversation.tools.values()
-                .flat_map(|tools| tools.iter())
-                .filter_map(|FigTool::ToolSpecification(spec)| {
-                    if spec.name == DUMMY_TOOL_NAME {
-                        None
-                    } else {
-                        Some(spec.name.clone())
-                    }
-                })
-                .collect::<HashSet<_>>()
-        } else {
-            // If showing all tools, create an empty set (no filtering)
-            HashSet::new()
-        };
+        // Calculate the longest tool name for formatting, including dynamic tools
+        let longest = origin_tools
+            .iter()
+            .flat_map(|(_, tools)| tools.iter())
+            .map(|tool| {
+                let FigTool::ToolSpecification(spec) = tool;
+                // For display purposes, we need to use the host tool name if available
+                session.conversation.tool_manager.tn_map
+                    .get(&spec.name)
+                    .map_or(spec.name.len(), |info| info.host_tool_name.len())
+            })
+            .max()
+            .unwrap_or(0);
+
+        // Get the list of currently selected tools for comparison
+        let currently_selected_tools: HashSet<String> = session.conversation.tools.values()
+            .flat_map(|tools| tools.iter())
+            .filter_map(|FigTool::ToolSpecification(spec)| {
+                if spec.name == DUMMY_TOOL_NAME {
+                    None
+                } else {
+                    Some(spec.name.clone())
+                }
+            })
+            .collect();
 
         for (origin, tools) in origin_tools.iter() {
             // Note that Tool is model facing and thus would have names recognized by model.
@@ -127,13 +211,11 @@ impl ToolsArgs {
                         return None;
                     }
 
-                    // If we're not showing all tools and this is from a dynamic server,
-                    // only show it if it's in the dynamically selected tools
-                    if !self.all && 
-                       matches!(origin, ToolOrigin::McpServer(_)) && 
-                       session.conversation.tool_manager.is_tool_from_dynamic_server(&spec.name) &&
-                       !dynamically_selected_tools.contains(&spec.name) {
-                        return None;
+                    // For non-all mode, only show selected tools from dynamic servers
+                    if !self.all && matches!(origin, ToolOrigin::McpServer(_)) {
+                        if !currently_selected_tools.contains(&spec.name) {
+                            return None;
+                        }
                     }
 
                     tn_map
@@ -148,15 +230,15 @@ impl ToolsArgs {
             }
 
             let to_display = sorted_tools.iter().fold(String::new(), |mut acc, tool_name| {
-                let width = longest - tool_name.len() + 4;
+                let width = longest.saturating_sub(tool_name.len()).saturating_add(4);
                 
-                // Determine if the tool is active (dynamically selected) or inactive
-                let is_active = self.all && 
-                                matches!(origin, ToolOrigin::McpServer(_)) && 
-                                !dynamically_selected_tools.contains(&tool_name.to_string());
+                // For dynamic servers in "all" mode, show unselected tools in gray
+                let is_unselected_dynamic = self.all && 
+                                          matches!(origin, ToolOrigin::McpServer(_)) && 
+                                          !currently_selected_tools.contains(&tool_name.to_string());
                 
-                // Format the tool name based on whether it's active or not
-                let formatted_tool_name = if is_active {
+                // Format the tool name based on whether it's selected or not
+                let formatted_tool_name = if is_unselected_dynamic {
                     format!("{}", style::style(tool_name).with(Color::DarkGrey))
                 } else {
                     tool_name.to_string()
@@ -277,8 +359,6 @@ pub enum ToolsSubcommand {
     /// Force re-selection of tools based on your conversation context
     /// Only works with dynamic MCP servers
     Select,
-    /// Print this message or the help of the given subcommand(s)
-    Help,
 }
 
 impl ToolsSubcommand {
@@ -548,28 +628,6 @@ impl ToolsSubcommand {
                         )?;
                     }
                 }
-            },
-            Self::Help => {
-                // Show help message
-                use clap::Command;
-                let mut cmd = Command::new("tools")
-                    .about("Manage tool permissions")
-                    .subcommand(Command::new("schema").about("Show the input schema for all available tools"))
-                    .subcommand(Command::new("trust").about("Trust a specific tool or tools for the session"))
-                    .subcommand(Command::new("untrust").about("Revert a tool or tools to per-request confirmation"))
-                    .subcommand(Command::new("trustall").about("Trust all tools (equivalent to deprecated /acceptall)"))
-                    .subcommand(Command::new("reset").about("Reset all tools to default permission levels"))
-                    .subcommand(Command::new("resetsingle").about("Reset a single tool to default permission level"))
-                    .subcommand(Command::new("select").about("Force re-selection of tools based on your conversation context"))
-                    .subcommand(Command::new("help").about("Print this message or the help of the given subcommand(s)"));
-                
-                let help = cmd.render_help();
-                queue!(
-                    session.stderr,
-                    style::Print("\n"),
-                    style::Print(help),
-                    style::Print("\n"),
-                )?;
             },
         };
 

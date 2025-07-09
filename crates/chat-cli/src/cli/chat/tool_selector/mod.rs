@@ -102,24 +102,18 @@ impl ToolSelector {
         // 3. Filter modules based on relevance score
         // 4. Return tools from selected modules
         
-        // Placeholder: Return all tools from all modules
+        // For now, return all tools from all modules
+        // This ensures that tools are visible in the UI
         let mut selected_tools = Vec::new();
         for module in modules {
-            // Simulate a relevance score based on simple keyword matching
-            let is_relevant = module.description.to_lowercase().contains(&query.to_lowercase()) || 
-                              module.name.to_lowercase().contains(&query.to_lowercase());
-            
-            if is_relevant {
-                selected_tools.extend(module.tools.clone());
+            debug!("Including all tools from module: {}", module.name);
+            for tool in &module.tools {
+                debug!("Adding tool: {}", tool);
+                selected_tools.push(tool.clone());
             }
         }
         
-        // If no tools were selected, return all tools as a fallback
-        if selected_tools.is_empty() {
-            for module in modules {
-                selected_tools.extend(module.tools.clone());
-            }
-        }
+        debug!("Selected {} tools", selected_tools.len());
         
         Ok(selected_tools)
     }
