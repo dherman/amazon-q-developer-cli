@@ -42,9 +42,9 @@ pub struct ToolsArgs {
 }
 
 impl ToolsArgs {
-    pub async fn execute(self, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+    pub async fn execute(self, os: &mut crate::os::Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         if let Some(subcommand) = self.subcommand {
-            return subcommand.execute(session).await;
+            return subcommand.execute(os, session).await;
         }
 
         // No subcommand - print the current tools and their permissions.
@@ -362,7 +362,7 @@ pub enum ToolsSubcommand {
 }
 
 impl ToolsSubcommand {
-    pub async fn execute(self, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+    pub async fn execute(self, os: &mut crate::os::Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         // Here we need to obtain the list of host tool names
         let existing_custom_tools = session
             .conversation
@@ -570,7 +570,7 @@ impl ToolsSubcommand {
                 }
                 
                 // Use the tool manager to filter tools dynamically
-                match session.conversation.tool_manager.force_select_tools(&last_query, &conversation_context).await {
+                match session.conversation.tool_manager.force_select_tools(&os.client, &last_query, &conversation_context).await {
                     Ok(filtered_tools) => {
                         // Update the tools in the conversation
                         session.conversation.tools = filtered_tools

@@ -151,7 +151,7 @@ impl Tool {
 pub struct ToolSpec {
     pub name: String,
     pub description: String,
-    #[serde(alias = "inputSchema")]
+    #[serde(alias = "inputSchema", alias = "parameters")]
     pub input_schema: InputSchema,
     #[serde(skip_serializing, default = "tool_origin")]
     pub tool_origin: ToolOrigin,

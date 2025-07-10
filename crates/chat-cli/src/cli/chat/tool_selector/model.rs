@@ -15,6 +15,14 @@ impl Model {
             Self::Claude3Haiku => "claude-3-haiku-20240307",
         }
     }
+    
+    /// Returns the AWS Bedrock model ID for API calls
+    pub fn to_model_id(&self) -> String {
+        match self {
+            Self::Claude35Sonnet => "anthropic.claude-3-5-sonnet-20241022-v2:0".to_string(),
+            Self::Claude3Haiku => "anthropic.claude-3-haiku-20240307-v1:0".to_string(),
+        }
+    }
 }
 
 impl std::fmt::Display for Model {

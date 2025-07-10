@@ -91,6 +91,7 @@ use tools::{
     OutputKind,
     QueuedTool,
     Tool,
+    ToolOrigin,
     ToolSpec,
 };
 use tracing::{
@@ -293,6 +294,9 @@ impl ChatArgs {
             .build(os, Box::new(std::io::stderr()), !self.no_interactive)
             .await?;
         let tool_config = tool_manager.load_tools(os, &mut stderr).await?;
+        
+        // Note: We load ALL tools initially, including those from dynamic servers.
+        // Dynamic selection will happen later when the user provides input.
 
         ChatSession::new(
             os,
@@ -1445,6 +1449,15 @@ impl ChatSession {
             // Otherwise continue with normal chat on 'n' or other responses
             self.tool_use_status = ToolUseStatus::Idle;
 
+            // Store query for tool selection before moving user_input
+            let query_for_tool_selection = if self.pending_tool_index.is_some() {
+                // In tool permission flow, get the original query from history
+                self.conversation.last_user_query().unwrap_or_default()
+            } else {
+                // In regular flow, use the current input
+                user_input.clone()
+            };
+
             if self.pending_tool_index.is_some() {
                 // If the user just enters "n", replace the message we send to the model with
                 // something more substantial.
@@ -1459,6 +1472,76 @@ impl ChatSession {
                 self.conversation.abandon_tool_use(&self.tool_uses, user_input);
             } else {
                 self.conversation.set_next_user_message(user_input).await;
+            }
+
+            // Perform dynamic tool selection if we have dynamic MCP servers
+            let has_dynamic_servers = self.conversation.tool_manager.clients.values().any(|client| client.is_dynamic());
+            debug!("Dynamic tool selection check: has_dynamic_servers={}, tool_uses.is_empty()={}, query='{}'", 
+                has_dynamic_servers, self.tool_uses.is_empty(), &query_for_tool_selection);
+            eprintln!("DEBUG: Dynamic tool selection check: has_dynamic_servers={}, tool_uses.is_empty()={}, query='{}'", 
+                has_dynamic_servers, self.tool_uses.is_empty(), &query_for_tool_selection);
+            
+            if has_dynamic_servers && self.tool_uses.is_empty() {
+                // Get the current user query and conversation context
+                let conversation_context = self.conversation.get_context_summary();
+                
+                debug!("Performing dynamic tool selection for query: '{}'", &query_for_tool_selection);
+                
+                // Filter tools dynamically based on the query
+                match self.conversation.tool_manager.filter_tools_dynamically(&os.client, &query_for_tool_selection, &conversation_context).await {
+                    Ok(filtered_tools) => {
+                        debug!("Dynamic tool selection returned {} tools", filtered_tools.len());
+                        
+                        // Update the conversation's tools with the filtered set
+                        self.conversation.tools = filtered_tools
+                            .values()
+                            .fold(std::collections::HashMap::<ToolOrigin, Vec<crate::api_client::model::Tool>>::new(), |mut acc, v| {
+                                let fig_doc = serde_json::from_value::<crate::api_client::model::FigDocument>(v.input_schema.0.clone())
+                                    .ok();
+                                let input_schema = crate::api_client::model::ToolInputSchema {
+                                    json: fig_doc,
+                                };
+                                let tool_spec = crate::api_client::model::ToolSpecification {
+                                    name: v.name.clone(),
+                                    description: v.description.clone(),
+                                    input_schema,
+                                };
+                                let tool = crate::api_client::model::Tool::ToolSpecification(tool_spec);
+                                
+                                // Determine the origin of this tool
+                                let origin = if let Some(tool_info) = self.conversation.tool_manager.tn_map.get(&v.name) {
+                                    if tool_info.server_name.is_empty() {
+                                        ToolOrigin::Native
+                                    } else {
+                                        ToolOrigin::McpServer(tool_info.server_name.clone())
+                                    }
+                                } else {
+                                    ToolOrigin::Native
+                                };
+                                
+                                acc.entry(origin).or_insert_with(Vec::new).push(tool);
+                                acc
+                            });
+                            
+                        let total_tools: usize = self.conversation.tools.values().map(|v| v.len()).sum();
+                        debug!("Dynamic tool selection completed. Selected {} tools", total_tools);
+                        
+                        // Log which tools were selected
+                        for (origin, tools) in &self.conversation.tools {
+                            for tool in tools {
+                                if let crate::api_client::model::Tool::ToolSpecification(spec) = tool {
+                                    debug!("  Selected tool: {} (origin: {:?})", spec.name, origin);
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        // Log the error but continue with all tools
+                        debug!("Dynamic tool selection failed: {}. Using all tools.", e);
+                    }
+                }
+            } else {
+                debug!("Skipping dynamic tool selection");
             }
 
             let conv_state = self

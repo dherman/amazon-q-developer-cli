@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use eyre::Result;
-use tracing::{debug, warn};
 
 /// Represents a module selection with relevance score and reasoning
 #[derive(Debug, Serialize, Deserialize)]

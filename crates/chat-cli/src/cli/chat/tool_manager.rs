@@ -54,10 +54,13 @@ use tracing::{
     warn,
 };
 
-use crate::api_client::model::{
-    ToolResult,
-    ToolResultContentBlock,
-    ToolResultStatus,
+use crate::api_client::{
+    ApiClient,
+    model::{
+        ToolResult,
+        ToolResultContentBlock,
+        ToolResultStatus,
+    },
 };
 use crate::cli::agent::{
     Agent,
@@ -200,6 +203,12 @@ impl ToolManagerBuilder {
             .map(|(server_name, _)| server_name.clone())
             .collect();
 
+        // Create a map of server names to their dynamic flags
+        let server_dynamic_flags: HashMap<String, bool> = enabled_servers
+            .iter()
+            .map(|(name, config)| (name.clone(), config.dynamic))
+            .collect();
+        
         let pre_initialized = enabled_servers
             .into_iter()
             .filter_map(|(server_name, server_config)| {
@@ -353,6 +362,7 @@ impl ToolManagerBuilder {
         let load_record_clone = load_record.clone();
         let agent = Arc::new(Mutex::new(self.agent.unwrap_or_default()));
         let agent_clone = agent.clone();
+        let server_dynamic_flags_clone = server_dynamic_flags.clone();
 
         tokio::spawn(async move {
             let mut record_temp_buf = Vec::<u8>::new();
@@ -392,10 +402,17 @@ impl ToolManagerBuilder {
                         pending_clone.write().await.remove(&server_name);
                         let (tool_filter, alias_list) = {
                             let agent_lock = agent_clone.lock().await;
+                            
+                            // Check if this server is dynamic
+                            let is_dynamic_server = server_dynamic_flags_clone.get(&server_name).copied().unwrap_or(false);
+                            
 
-                            // We will assume all tools are allowed if the tool list consists of 1
-                            // element and it's a *
-                            let tool_filter = if agent_lock.tools.len() == 1
+                            // For dynamic servers, we always load all tools initially
+                            // They will be filtered later based on conversation context
+                            let tool_filter = if is_dynamic_server {
+                                debug!("Using ToolFilter::All for dynamic server {}", server_name);
+                                ToolFilter::All
+                            } else if agent_lock.tools.len() == 1
                                 && agent_lock.tools.first().map(String::as_str).is_some_and(|c| c == "*")
                             {
                                 debug!("Using ToolFilter::All for server {}", server_name);
@@ -450,7 +467,8 @@ impl ToolManagerBuilder {
                                 
                                 let mut specs = Vec::new();
                                 for (i, tool_value) in result.tools.into_iter().enumerate() {
-                                    debug!("Processing tool {}: {}", i, serde_json::to_string(&tool_value).unwrap_or_else(|_| "invalid json".to_string()));
+                                    let tool_json = serde_json::to_string(&tool_value).unwrap_or_else(|_| "invalid json".to_string());
+                                    debug!("Processing tool {}: {}", i, &tool_json);
                                     
                                     match serde_json::from_value::<ToolSpec>(tool_value) {
                                         Ok(spec) => {
@@ -886,6 +904,7 @@ impl ToolManager {
     /// Filters tools based on dynamic selection
     pub async fn filter_tools_dynamically(
         &self,
+        api_client: &ApiClient,
         query: &str,
         conversation_context: &str,
     ) -> Result<HashMap<String, ToolSpec>, eyre::Report> {
@@ -934,7 +953,7 @@ impl ToolManager {
         }
         
         // Use the tool selector to select relevant modules
-        let tool_selector = ToolSelector::new(Model::Claude35Sonnet);
+        let tool_selector = ToolSelector::new(Model::Claude35Sonnet, api_client);
         let selected_tools = match tool_selector.select_tools(query, &all_modules_info, conversation_context).await {
             Ok(tools) => tools,
             Err(e) => {
@@ -963,6 +982,7 @@ impl ToolManager {
     /// Forces re-selection of tools
     pub async fn force_select_tools(
         &self,
+        api_client: &ApiClient,
         query: &str,
         conversation_context: &str,
     ) -> Result<HashMap<String, ToolSpec>, eyre::Report> {
@@ -1011,7 +1031,7 @@ impl ToolManager {
         }
         
         // Use the tool selector to force re-selection of tools
-        let tool_selector = ToolSelector::new(Model::Claude35Sonnet);
+        let tool_selector = ToolSelector::new(Model::Claude35Sonnet, api_client);
         let selected_tools = match tool_selector.select_tools(query, &all_modules_info, conversation_context).await {
             Ok(tools) => tools,
             Err(e) => {
@@ -1044,15 +1064,18 @@ impl ToolManager {
         
         if let Some(tool_info) = self.tn_map.get(tool_name) {
             debug!("Tool {} is from server {}", tool_name, tool_info.server_name);
+            eprintln!("DEBUG: Tool {} is from server '{}'", tool_name, tool_info.server_name);
             if let Some(client) = self.clients.get(&tool_info.server_name) {
                 let is_dynamic = client.is_dynamic();
                 debug!("Server {} is dynamic: {}", tool_info.server_name, is_dynamic);
                 return is_dynamic;
             } else {
                 debug!("No client found for server {}", tool_info.server_name);
+                eprintln!("DEBUG: No client found for server '{}'", tool_info.server_name);
             }
         } else {
             debug!("Tool {} not found in tn_map", tool_name);
+            eprintln!("DEBUG: Tool {} not found in tn_map", tool_name);
         }
         
         false
