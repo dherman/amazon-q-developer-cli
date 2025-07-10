@@ -119,10 +119,13 @@ impl ToolsArgs {
                                             let model_tool_name = format!("@{}___{}", server_name, mcp_spec.name);
                                             
                                             // Check if this tool is already in the selected tools
+                                            // We need to check both the plain name and the model tool name
                                             let is_already_selected = session.conversation.tools
                                                 .values()
                                                 .flat_map(|tools| tools.iter())
-                                                .any(|FigTool::ToolSpecification(tool_spec)| tool_spec.name == model_tool_name);
+                                                .any(|FigTool::ToolSpecification(tool_spec)| {
+                                                    tool_spec.name == model_tool_name || tool_spec.name == mcp_spec.name
+                                                });
                                             
                                             if !is_already_selected {
                                                 // Create a FigTool for this unselected dynamic tool

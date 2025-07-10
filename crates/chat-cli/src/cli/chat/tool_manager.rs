@@ -964,9 +964,35 @@ impl ToolManager {
         };
         
         // Filter the schema to only include selected tools and tools from non-dynamic servers
+        // Additionally, exclude native tools that conflict with selected dynamic tools
         let mut filtered_schema = HashMap::new();
+        
+        // First, add all selected tools from dynamic servers
+        for name in &selected_tools {
+            if let Some(spec) = self.schema.get(name) {
+                filtered_schema.insert(name.clone(), spec.clone());
+            }
+        }
+        
+        // Then add tools from non-dynamic servers (including native tools)
+        // but exclude those that conflict with already selected tools
         for (name, spec) in &self.schema {
-            if selected_tools.contains(name) || !self.is_tool_from_dynamic_server(name) {
+            if !self.is_tool_from_dynamic_server(name) && !selected_tools.contains(name) {
+                // Check if this is a native tool that conflicts with selected dynamic tools
+                // For now, we'll use a simple heuristic: exclude use_aws if any S3/EC2/Lambda tools are selected
+                if name == "use_aws" {
+                    let has_aws_specific_tools = selected_tools.iter().any(|tool| {
+                        tool.starts_with("s3_") || 
+                        tool.starts_with("ec2_") || 
+                        tool.starts_with("lambda_") ||
+                        tool.starts_with("dynamodb_") ||
+                        tool.starts_with("cloudformation_")
+                    });
+                    if has_aws_specific_tools {
+                        debug!("Excluding use_aws tool because specific AWS tools are selected");
+                        continue;
+                    }
+                }
                 filtered_schema.insert(name.clone(), spec.clone());
             }
         }

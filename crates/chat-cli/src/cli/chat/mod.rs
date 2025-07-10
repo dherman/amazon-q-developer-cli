@@ -22,6 +22,7 @@ pub mod util;
 use std::borrow::Cow;
 use std::collections::{
     HashMap,
+    HashSet,
     VecDeque,
 };
 use std::io::{
@@ -293,10 +294,27 @@ impl ChatArgs {
             .agent(agents.get_active().cloned().unwrap_or_default())
             .build(os, Box::new(std::io::stderr()), !self.no_interactive)
             .await?;
-        let tool_config = tool_manager.load_tools(os, &mut stderr).await?;
+        let mut tool_config = tool_manager.load_tools(os, &mut stderr).await?;
         
-        // Note: We load ALL tools initially, including those from dynamic servers.
-        // Dynamic selection will happen later when the user provides input.
+        // Filter out tools from dynamic servers - they will be selected dynamically based on conversation context
+        let dynamic_servers: HashSet<String> = tool_manager.clients
+            .iter()
+            .filter(|(_, client)| client.is_dynamic())
+            .map(|(name, _)| name.clone())
+            .collect();
+        
+        if !dynamic_servers.is_empty() {
+            debug!("Filtering out tools from dynamic servers: {:?}", dynamic_servers);
+            let initial_count = tool_config.len();
+            tool_config.retain(|_, spec| {
+                match &spec.tool_origin {
+                    tools::ToolOrigin::Native => true,
+                    tools::ToolOrigin::McpServer(server_name) => !dynamic_servers.contains(server_name),
+                }
+            });
+            debug!("Filtered tools from {} to {} (removed {} from dynamic servers)", 
+                initial_count, tool_config.len(), initial_count - tool_config.len());
+        }
 
         ChatSession::new(
             os,

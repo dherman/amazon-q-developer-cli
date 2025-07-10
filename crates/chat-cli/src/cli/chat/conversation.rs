@@ -477,11 +477,26 @@ impl ConversationState {
             return;
         }
         self.tool_manager.update().await;
+        
+        // Get list of dynamic servers to filter out
+        let dynamic_servers: std::collections::HashSet<String> = self.tool_manager.clients
+            .iter()
+            .filter(|(_, client)| client.is_dynamic())
+            .map(|(name, _)| name.clone())
+            .collect();
+            
         // TODO: make this more targeted so we don't have to clone the entire list of tools
         self.tools = self
             .tool_manager
             .schema
             .values()
+            .filter(|spec| {
+                // Include tool if it's native or from a non-dynamic server
+                match &spec.tool_origin {
+                    ToolOrigin::Native => true,
+                    ToolOrigin::McpServer(server_name) => !dynamic_servers.contains(server_name),
+                }
+            })
             .fold(HashMap::<ToolOrigin, Vec<Tool>>::new(), |mut acc, v| {
                 let tool = Tool::ToolSpecification(ToolSpecification {
                     name: v.name.clone(),
