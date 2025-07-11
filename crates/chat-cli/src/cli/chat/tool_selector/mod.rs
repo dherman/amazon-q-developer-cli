@@ -58,6 +58,7 @@ impl<'a> ToolSelector<'a> {
         // Check cache for similar queries
         if let Some(cached_tools) = self.check_cache(query).await {
             debug!("Using cached tool selection for query: {}", query);
+            eprintln!("DEBUG: Using cached tool selection, skipping LLM call");
             return Ok(cached_tools);
         }
 
@@ -128,6 +129,7 @@ impl<'a> ToolSelector<'a> {
         
         // Try to use the LLM for tool selection
         debug!("Creating tool selection client with model: {:?}", self.model);
+        
         let tool_selection_client = ToolSelectionClient::new(self.api_client, self.model);
         match tool_selection_client.select_tools(prompt).await {
             Ok(selections) => {

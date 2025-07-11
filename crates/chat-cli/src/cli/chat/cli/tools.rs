@@ -573,7 +573,8 @@ impl ToolsSubcommand {
                 }
                 
                 // Use the tool manager to filter tools dynamically
-                match session.conversation.tool_manager.force_select_tools(&os.client, &last_query, &conversation_context).await {
+                let current_model = session.conversation.model.as_deref();
+                match session.conversation.tool_manager.force_select_tools(&os.client, &last_query, &conversation_context, current_model).await {
                     Ok(filtered_tools) => {
                         // Update the tools in the conversation
                         session.conversation.tools = filtered_tools

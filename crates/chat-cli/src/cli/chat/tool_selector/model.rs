@@ -23,6 +23,18 @@ impl Model {
             Self::Claude3Haiku => "CLAUDE_3_HAIKU_20240307_V1_0".to_string(),
         }
     }
+    
+    /// Creates a Model from a Q CLI model ID
+    /// Falls back to Claude 3.5 Sonnet if the model ID is not recognized
+    pub fn from_model_id(model_id: &str) -> Self {
+        match model_id {
+            "CLAUDE_3_5_SONNET_20241022_V2_0" => Self::Claude35Sonnet,
+            "CLAUDE_3_HAIKU_20240307_V1_0" => Self::Claude3Haiku,
+            // For newer models (4.0, 3.7) that we don't have specific variants for yet,
+            // we'll use the Claude 3.5 Sonnet as it's the most capable supported model
+            _ => Self::Claude35Sonnet,
+        }
+    }
 }
 
 impl std::fmt::Display for Model {
@@ -51,5 +63,15 @@ mod tests {
     fn test_model_to_model_id() {
         assert_eq!(Model::Claude35Sonnet.to_model_id(), "CLAUDE_3_5_SONNET_20241022_V2_0");
         assert_eq!(Model::Claude3Haiku.to_model_id(), "CLAUDE_3_HAIKU_20240307_V1_0");
+    }
+    
+    #[test]
+    fn test_from_model_id() {
+        assert_eq!(Model::from_model_id("CLAUDE_3_5_SONNET_20241022_V2_0"), Model::Claude35Sonnet);
+        assert_eq!(Model::from_model_id("CLAUDE_3_HAIKU_20240307_V1_0"), Model::Claude3Haiku);
+        // Test fallback for unknown models
+        assert_eq!(Model::from_model_id("CLAUDE_SONNET_4_20250514_V1_0"), Model::Claude35Sonnet);
+        assert_eq!(Model::from_model_id("CLAUDE_3_7_SONNET_20250219_V1_0"), Model::Claude35Sonnet);
+        assert_eq!(Model::from_model_id("unknown_model"), Model::Claude35Sonnet);
     }
 }

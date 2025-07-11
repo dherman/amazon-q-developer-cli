@@ -907,6 +907,7 @@ impl ToolManager {
         api_client: &ApiClient,
         query: &str,
         conversation_context: &str,
+        current_model_id: Option<&str>,
     ) -> Result<HashMap<String, ToolSpec>, eyre::Report> {
         use crate::cli::chat::tool_selector::{Model, ToolSelector, ModuleServerInfo};
         
@@ -953,7 +954,12 @@ impl ToolManager {
         }
         
         // Use the tool selector to select relevant modules
-        let tool_selector = ToolSelector::new(Model::Claude35Sonnet, api_client);
+        // Use the current model if provided, otherwise default to Claude3Haiku
+        let model = current_model_id
+            .map(Model::from_model_id)
+            .unwrap_or(Model::Claude3Haiku);
+        debug!("Using model {} for tool selection (from model_id: {:?})", model, current_model_id);
+        let tool_selector = ToolSelector::new(model, api_client);
         let selected_tools = match tool_selector.select_tools(query, &all_modules_info, conversation_context).await {
             Ok(tools) => tools,
             Err(e) => {
@@ -992,7 +998,7 @@ impl ToolManager {
             dynamic_tool_names.len(),
             dynamic_tool_names
         );
-        eprintln!("TOOL MANAGER: Selected tools from dynamic servers: {:?}", dynamic_tool_names);
+        debug!("Selected tools from dynamic servers: {:?}", dynamic_tool_names);
         
         // Log all tools in filtered schema by origin
         let native_tools: Vec<&str> = filtered_schema.iter()
@@ -1019,6 +1025,7 @@ impl ToolManager {
         api_client: &ApiClient,
         query: &str,
         conversation_context: &str,
+        current_model_id: Option<&str>,
     ) -> Result<HashMap<String, ToolSpec>, eyre::Report> {
         use crate::cli::chat::tool_selector::{Model, ToolSelector, ModuleServerInfo};
         
@@ -1065,7 +1072,12 @@ impl ToolManager {
         }
         
         // Use the tool selector to force re-selection of tools
-        let tool_selector = ToolSelector::new(Model::Claude35Sonnet, api_client);
+        // Use the current model if provided, otherwise default to Claude35Sonnet for forced selection
+        let model = current_model_id
+            .map(Model::from_model_id)
+            .unwrap_or(Model::Claude35Sonnet);
+        debug!("Forcing tool selection with model {} (from model_id: {:?})", model, current_model_id);
+        let tool_selector = ToolSelector::new(model, api_client);
         let selected_tools = match tool_selector.select_tools(query, &all_modules_info, conversation_context).await {
             Ok(tools) => tools,
             Err(e) => {

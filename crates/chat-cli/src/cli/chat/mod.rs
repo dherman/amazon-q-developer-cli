@@ -1499,7 +1499,7 @@ impl ChatSession {
             debug!("Dynamic tool selection check: has_dynamic_servers={}, tool_uses.is_empty()={}, pending_tool_index={:?}, query='{}'", 
                 has_dynamic_servers, self.tool_uses.is_empty(), self.pending_tool_index, &query_for_tool_selection);
             
-            eprintln!("DYNAMIC CHECK: has_dynamic_servers={}, tool_uses.is_empty()={}, pending_tool_index={:?}", 
+            debug!("Dynamic check: has_dynamic_servers={}, tool_uses.is_empty()={}, pending_tool_index={:?}", 
                 has_dynamic_servers, self.tool_uses.is_empty(), self.pending_tool_index);
             
             // Dynamic selection should happen when:
@@ -1513,10 +1513,11 @@ impl ChatSession {
                 debug!("Performing dynamic tool selection for query: '{}'", &query_for_tool_selection);
                 
                 // Filter tools dynamically based on the query
-                match self.conversation.tool_manager.filter_tools_dynamically(&os.client, &query_for_tool_selection, &conversation_context).await {
+                let current_model = self.conversation.model.as_deref();
+                match self.conversation.tool_manager.filter_tools_dynamically(&os.client, &query_for_tool_selection, &conversation_context, current_model).await {
                     Ok(filtered_tools) => {
                         debug!("Dynamic tool selection returned {} tools", filtered_tools.len());
-                        eprintln!("DYNAMIC SELECTION: Query='{}', Selected {} tools", &query_for_tool_selection, filtered_tools.len());
+                        debug!("Dynamic selection: Query='{}', Selected {} tools", &query_for_tool_selection, filtered_tools.len());
                         
                         // Log the filtered tools
                         let filtered_tool_names: Vec<&str> = filtered_tools.keys().map(|s| s.as_str()).collect();
@@ -1527,7 +1528,7 @@ impl ChatSession {
                             .filter(|(_, spec)| matches!(&spec.tool_origin, ToolOrigin::McpServer(name) if self.conversation.tool_manager.clients.get(name).map_or(false, |c| c.is_dynamic())))
                             .map(|(name, _)| name.as_str())
                             .collect();
-                        eprintln!("DYNAMIC SELECTION: Dynamic server tools selected: {:?}", dynamic_tools);
+                        debug!("Dynamic selection: Dynamic server tools selected: {:?}", dynamic_tools);
                         
                         // Update the conversation's tools with the filtered set
                         self.conversation.tools = filtered_tools
