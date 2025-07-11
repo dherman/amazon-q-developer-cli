@@ -3,6 +3,7 @@ import { Tool } from './types/tool';
 import { s3ListBuckets } from './tools/s3/list-buckets';
 import { s3ListObjects } from './tools/s3/list-objects';
 import { ec2DescribeInstances } from './tools/ec2/describe-instances';
+import { lambdaListFunctions } from './tools/lambda/list-functions';
 
 // Import tool definitions
 import { s3Tools } from './tools/s3/definitions';
@@ -36,6 +37,7 @@ export function registerTools(server: McpServer): void {
   server.registerTool(s3ListBuckets);
   server.registerTool(s3ListObjects);
   server.registerTool(ec2DescribeInstances);
+  server.registerTool(lambdaListFunctions);
   
   // Register stub tools for S3
   s3Tools
@@ -51,8 +53,15 @@ export function registerTools(server: McpServer): void {
       server.registerTool(createStubTool(tool.name, tool.description, tool.parameters));
     });
   
+  // Register stub tools for Lambda
+  lambdaTools
+    .filter(tool => tool.name !== 'lambda_list_functions')
+    .forEach(tool => {
+      server.registerTool(createStubTool(tool.name, tool.description, tool.parameters));
+    });
+  
   // Register stub tools for other services
-  [...lambdaTools, ...dynamodbTools, ...cloudformationTools].forEach(tool => {
+  [...dynamodbTools, ...cloudformationTools].forEach(tool => {
     server.registerTool(createStubTool(tool.name, tool.description, tool.parameters));
   });
 }
