@@ -242,9 +242,34 @@ impl InvokeOutput {
     pub fn as_str(&self) -> &str {
         match &self.output {
             OutputKind::Text(s) => s.as_str(),
-            OutputKind::Json(j) => j.as_str().unwrap_or_default(),
+            OutputKind::Json(j) => {
+                // For JSON values, we need to handle different types
+                if let Some(s) = j.as_str() {
+                    // If it's already a string, return it
+                    s
+                } else {
+                    // Otherwise, convert the JSON to a string representation
+                    // This is a temporary buffer issue - we can't return a reference to a temporary String
+                    // For now, return empty string to maintain compatibility
+                    // The real fix would be to change this to return String instead of &str
+                    ""
+                }
+            },
             OutputKind::Images(_) => "",
             OutputKind::Mixed { text, .. } => text.as_str(), // Return the text part
+        }
+    }
+
+    /// Get a string representation of the output for display/logging purposes
+    pub fn to_display_string(&self) -> String {
+        match &self.output {
+            OutputKind::Text(s) => s.clone(),
+            OutputKind::Json(j) => {
+                // Pretty print JSON for display
+                serde_json::to_string_pretty(j).unwrap_or_else(|_| j.to_string())
+            },
+            OutputKind::Images(_) => "See images data supplied".to_string(),
+            OutputKind::Mixed { text, .. } => text.clone(),
         }
     }
 }

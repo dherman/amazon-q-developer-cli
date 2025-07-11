@@ -1,8 +1,8 @@
 import { S3Client, ListBucketsCommand } from '@aws-sdk/client-s3';
 import { Tool } from '../../types/tool';
 
-// Create S3 client
-const s3Client = new S3Client({});
+// Create S3 client with hardcoded region
+const s3Client = new S3Client({ region: 'us-east-1' });
 
 /**
  * Tool to list all S3 buckets

@@ -1496,8 +1496,6 @@ impl ChatSession {
             let has_dynamic_servers = self.conversation.tool_manager.clients.values().any(|client| client.is_dynamic());
             debug!("Dynamic tool selection check: has_dynamic_servers={}, tool_uses.is_empty()={}, query='{}'", 
                 has_dynamic_servers, self.tool_uses.is_empty(), &query_for_tool_selection);
-            eprintln!("DEBUG: Dynamic tool selection check: has_dynamic_servers={}, tool_uses.is_empty()={}, query='{}'", 
-                has_dynamic_servers, self.tool_uses.is_empty(), &query_for_tool_selection);
             
             if has_dynamic_servers && self.tool_uses.is_empty() {
                 // Get the current user query and conversation context
@@ -1691,6 +1689,7 @@ impl ChatSession {
                     }
 
                     debug!("tool result output: {:#?}", result);
+                    
                     execute!(
                         self.stdout,
                         style::Print(CONTINUATION_LINE),
@@ -1715,6 +1714,10 @@ impl ChatSession {
                 },
                 Err(err) => {
                     error!(?err, "An error occurred processing the tool");
+                    
+                    // Log tool error for debugging
+                    eprintln!("DEBUG: Tool {} error: {:?}", tool.tool.display_name(), err);
+                    
                     execute!(
                         self.stderr,
                         style::Print(CONTINUATION_LINE),

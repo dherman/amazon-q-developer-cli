@@ -978,21 +978,7 @@ impl ToolManager {
         // but exclude those that conflict with already selected tools
         for (name, spec) in &self.schema {
             if !self.is_tool_from_dynamic_server(name) && !selected_tools.contains(name) {
-                // Check if this is a native tool that conflicts with selected dynamic tools
-                // For now, we'll use a simple heuristic: exclude use_aws if any S3/EC2/Lambda tools are selected
-                if name == "use_aws" {
-                    let has_aws_specific_tools = selected_tools.iter().any(|tool| {
-                        tool.starts_with("s3_") || 
-                        tool.starts_with("ec2_") || 
-                        tool.starts_with("lambda_") ||
-                        tool.starts_with("dynamodb_") ||
-                        tool.starts_with("cloudformation_")
-                    });
-                    if has_aws_specific_tools {
-                        debug!("Excluding use_aws tool because specific AWS tools are selected");
-                        continue;
-                    }
-                }
+                // Include native tools that weren't dynamically selected
                 filtered_schema.insert(name.clone(), spec.clone());
             }
         }
@@ -1090,18 +1076,15 @@ impl ToolManager {
         
         if let Some(tool_info) = self.tn_map.get(tool_name) {
             debug!("Tool {} is from server {}", tool_name, tool_info.server_name);
-            eprintln!("DEBUG: Tool {} is from server '{}'", tool_name, tool_info.server_name);
             if let Some(client) = self.clients.get(&tool_info.server_name) {
                 let is_dynamic = client.is_dynamic();
                 debug!("Server {} is dynamic: {}", tool_info.server_name, is_dynamic);
                 return is_dynamic;
             } else {
                 debug!("No client found for server {}", tool_info.server_name);
-                eprintln!("DEBUG: No client found for server '{}'", tool_info.server_name);
             }
         } else {
             debug!("Tool {} not found in tn_map", tool_name);
-            eprintln!("DEBUG: Tool {} not found in tn_map", tool_name);
         }
         
         false
