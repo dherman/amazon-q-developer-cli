@@ -1534,9 +1534,12 @@ impl ChatSession {
                             .values()
                             .fold(std::collections::HashMap::<ToolOrigin, Vec<crate::api_client::model::Tool>>::new(), |mut acc, v| {
                                 let fig_doc = serde_json::from_value::<crate::api_client::model::FigDocument>(v.input_schema.0.clone())
-                                    .ok();
+                                    .unwrap_or_else(|_| {
+                                        // If deserialization fails, create a null document
+                                        crate::api_client::model::FigDocument::from(aws_smithy_types::Document::Null)
+                                    });
                                 let input_schema = crate::api_client::model::ToolInputSchema {
-                                    json: fig_doc,
+                                    json: Some(fig_doc),
                                 };
                                 let tool_spec = crate::api_client::model::ToolSpecification {
                                     name: v.name.clone(),

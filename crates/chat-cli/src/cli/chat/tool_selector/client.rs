@@ -21,7 +21,7 @@ impl<'a> ToolSelectionClient<'a> {
     
     /// Sends a tool selection request to the LLM
     pub async fn select_tools(&self, prompt: String) -> Result<Vec<ModuleSelection>> {
-        debug!("Sending tool selection request with model: {}", self.model);
+        debug!("Sending tool selection request with model: {} ({})", self.model, self.model.to_model_id());
         
         // Create a conversation state for the tool selection request
         let conversation_state = ConversationState {
@@ -37,7 +37,13 @@ impl<'a> ToolSelectionClient<'a> {
         };
         
         // Send the message using the existing API client
-        let mut output = self.api_client.send_message(conversation_state).await?;
+        let mut output = match self.api_client.send_message(conversation_state).await {
+            Ok(output) => output,
+            Err(e) => {
+                debug!("Tool selection API call failed: {:?}", e);
+                return Err(e.into());
+            }
+        };
         
         // Collect the response
         let mut response_text = String::new();

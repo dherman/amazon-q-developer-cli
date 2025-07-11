@@ -127,6 +127,7 @@ impl<'a> ToolSelector<'a> {
         debug!("Available modules: {}", modules_info.len());
         
         // Try to use the LLM for tool selection
+        debug!("Creating tool selection client with model: {:?}", self.model);
         let tool_selection_client = ToolSelectionClient::new(self.api_client, self.model);
         match tool_selection_client.select_tools(prompt).await {
             Ok(selections) => {
