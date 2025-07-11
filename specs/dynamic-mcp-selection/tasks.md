@@ -29,6 +29,26 @@
   - [x] Add configuration for tool selector model selection (hardcoded initially)
   - [x] Create prompt templates for tool selection
 
+## LLM Integration for Tool Selection
+
+- [x] Create tool selection client
+  - [x] Implement `ToolSelectionClient` that reuses the existing `ApiClient`
+  - [x] Use same authentication mechanism as main chat
+  - [x] Support Claude 3.5 Sonnet model (hardcoded initially)
+  - [x] Map Q CLI model IDs correctly (e.g., CLAUDE_3_5_SONNET_20241022_V2_0)
+
+- [x] Integrate LLM client with tool selector
+  - [x] Replace heuristic implementation with LLM call in `select_tools_with_model`
+  - [x] Use existing prompt template and response parser
+  - [x] Fall back to heuristic implementation on LLM errors
+  - [x] Add proper error handling and logging
+
+- [ ] Testing and optimization
+  - [ ] Test with AWS MCP server for S3 and Lambda queries
+  - [ ] Verify tool selection accuracy
+  - [ ] Monitor selection latency
+  - [ ] Optimize prompt template based on results
+
 - [x] Integrate server instructions
   - [x] Update ServerCapabilities to include instructions field
   - [x] Update ServerMetadata to include instructions field
@@ -107,6 +127,12 @@
   - [ ] Measure selection accuracy
   - [ ] Measure selection latency
   - [ ] Test with varying numbers of tools
+
+- [ ] Real-world testing
+  - [ ] Test LLM-based selection with AWS MCP server
+  - [ ] Test fallback to heuristic when LLM is unavailable
+  - [ ] Test with multiple dynamic servers
+  - [ ] Verify that non-dynamic tools remain available
 
 ## Documentation
 

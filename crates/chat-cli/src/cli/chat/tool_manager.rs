@@ -964,24 +964,46 @@ impl ToolManager {
         };
         
         // Filter the schema to only include selected tools and tools from non-dynamic servers
-        // Additionally, exclude native tools that conflict with selected dynamic tools
         let mut filtered_schema = HashMap::new();
         
-        // First, add all selected tools from dynamic servers
+        // First, add all tools from non-dynamic servers (including native tools)
+        // These should always be available
+        for (name, spec) in &self.schema {
+            if !self.is_tool_from_dynamic_server(name) {
+                filtered_schema.insert(name.clone(), spec.clone());
+            }
+        }
+        
+        // Then add only the newly selected tools from dynamic servers
+        // This replaces any previously selected dynamic tools
         for name in &selected_tools {
             if let Some(spec) = self.schema.get(name) {
                 filtered_schema.insert(name.clone(), spec.clone());
             }
         }
         
-        // Then add tools from non-dynamic servers (including native tools)
-        // but exclude those that conflict with already selected tools
-        for (name, spec) in &self.schema {
-            if !self.is_tool_from_dynamic_server(name) && !selected_tools.contains(name) {
-                // Include native tools that weren't dynamically selected
-                filtered_schema.insert(name.clone(), spec.clone());
-            }
-        }
+        // Log which tools were selected from dynamic servers
+        let dynamic_tool_names: Vec<String> = selected_tools.iter()
+            .filter(|name| self.is_tool_from_dynamic_server(name))
+            .cloned()
+            .collect();
+        debug!(
+            "Dynamic tool selection: {} dynamic tools selected: {:?}",
+            dynamic_tool_names.len(),
+            dynamic_tool_names
+        );
+        eprintln!("TOOL MANAGER: Selected tools from dynamic servers: {:?}", dynamic_tool_names);
+        
+        // Log all tools in filtered schema by origin
+        let native_tools: Vec<&str> = filtered_schema.iter()
+            .filter(|(_, spec)| matches!(&spec.tool_origin, ToolOrigin::Native))
+            .map(|(name, _)| name.as_str())
+            .collect();
+        let mcp_tools: Vec<&str> = filtered_schema.iter()
+            .filter(|(_, spec)| matches!(&spec.tool_origin, ToolOrigin::McpServer(_)))
+            .map(|(name, _)| name.as_str())
+            .collect();
+        eprintln!("TOOL MANAGER: Final filtered schema - Native: {:?}, MCP: {:?}", native_tools, mcp_tools);
         
         debug!(
             "Filtered tools from {} to {} based on query",

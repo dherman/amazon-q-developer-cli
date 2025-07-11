@@ -1,6 +1,7 @@
 mod prompt_template;
 mod response_parser;
 mod model;
+mod client;
 
 use std::collections::HashMap;
 use tokio::sync::RwLock;
@@ -8,6 +9,7 @@ use eyre::Result;
 use tracing::debug;
 
 pub use model::Model;
+use client::ToolSelectionClient;
 use crate::mcp_client::Module;
 use crate::api_client::ApiClient;
 
@@ -39,6 +41,11 @@ impl<'a> ToolSelector<'a> {
             cache: RwLock::new(HashMap::new()),
             api_client,
         }
+    }
+    
+    /// Creates a new tool selector with the default model (Claude 3.5 Sonnet)
+    pub fn with_default_model(api_client: &'a ApiClient) -> Self {
+        Self::new(Model::Claude35Sonnet, api_client)
     }
 
     /// Selects tools based on the user query and available modules with server info
@@ -110,7 +117,7 @@ impl<'a> ToolSelector<'a> {
             })
             .collect();
             
-        let _prompt = prompt_template::generate_tool_selection_prompt(
+        let prompt = prompt_template::generate_tool_selection_prompt(
             query, 
             &modules_with_server_info, 
             conversation_context
@@ -119,94 +126,130 @@ impl<'a> ToolSelector<'a> {
         debug!("Selecting tools for query: {}", query);
         debug!("Available modules: {}", modules_info.len());
         
-        // For now, fall back to the enhanced placeholder implementation
-        // TODO: Implement actual LLM call once we resolve the API client interface issues
-        debug!("Using enhanced placeholder for tool selection (LLM call not yet implemented)");
-        
-        // Enhanced placeholder implementation that simulates model behavior
-        let query_lower = query.to_lowercase();
-        let mut module_scores: Vec<(String, Vec<String>, f32, bool)> = Vec::new();
-        
-        for info in modules_info {
-            let module_name_lower = info.module.name.to_lowercase();
-            let module_desc_lower = info.module.description.to_lowercase();
-            let mut score = 0.0;
-            let has_priority_instruction = info.server_instructions
-                .as_ref()
-                .map(|inst| inst.to_lowercase().contains("prefer this") || 
-                           inst.to_lowercase().contains("priority"))
-                .unwrap_or(false);
-            
-            // Check for direct keyword matches in module name or description
-            for word in query_lower.split_whitespace() {
-                if module_name_lower.contains(word) {
-                    score += 3.0; // High score for name match
-                }
-                if module_desc_lower.contains(word) {
-                    score += 2.0; // Medium score for description match
-                }
+        // Try to use the LLM for tool selection
+        let tool_selection_client = ToolSelectionClient::new(self.api_client, self.model);
+        match tool_selection_client.select_tools(prompt).await {
+            Ok(selections) => {
+                debug!("LLM tool selection completed successfully");
                 
-                // Check tool names
-                for tool in &info.module.tools {
-                    if tool.to_lowercase().contains(word) {
-                        score += 2.5; // High score for tool name match
+                let mut selected_tools = Vec::new();
+                for selection in selections {
+                    if selection.relevance_score >= 5 {
+                        // Find the module and add its tools
+                        if let Some(info) = modules_info.iter().find(|info| 
+                            info.module.name == selection.module_name && 
+                            info.server_name == selection.server_name
+                        ) {
+                            debug!(
+                                "Selected module {} from server {} with score {} (reasoning: {})", 
+                                selection.module_name, 
+                                selection.server_name, 
+                                selection.relevance_score,
+                                selection.reasoning
+                            );
+                            selected_tools.extend(info.module.tools.clone());
+                        }
                     }
                 }
-            }
-            
-            // Special handling for AWS services
-            if query_lower.contains("s3") || query_lower.contains("bucket") {
-                if module_name_lower.contains("s3") || module_desc_lower.contains("s3") || 
-                   module_desc_lower.contains("storage") || module_desc_lower.contains("bucket") {
-                    score += 5.0; // Very high score for S3-related modules
+                
+                if selected_tools.is_empty() {
+                    debug!("No tools selected by LLM based on relevance scoring");
+                } else {
+                    debug!("LLM selected {} tools from relevant modules", selected_tools.len());
                 }
+                
+                Ok(selected_tools)
             }
-            
-            if query_lower.contains("ec2") || query_lower.contains("instance") {
-                if module_name_lower.contains("ec2") || module_desc_lower.contains("ec2") || 
-                   module_desc_lower.contains("instance") || module_desc_lower.contains("virtual machine") {
-                    score += 5.0; // Very high score for EC2-related modules
+            Err(e) => {
+                // Fall back to heuristic implementation
+                debug!("LLM tool selection failed, falling back to heuristic: {}", e);
+                
+                // Enhanced heuristic implementation
+                let query_lower = query.to_lowercase();
+                let mut module_scores: Vec<(String, Vec<String>, f32, bool)> = Vec::new();
+                
+                for info in modules_info {
+                    let module_name_lower = info.module.name.to_lowercase();
+                    let module_desc_lower = info.module.description.to_lowercase();
+                    let mut score = 0.0;
+                    let has_priority_instruction = info.server_instructions
+                        .as_ref()
+                        .map(|inst| inst.to_lowercase().contains("prefer this") || 
+                                   inst.to_lowercase().contains("priority"))
+                        .unwrap_or(false);
+                    
+                    // Check for direct keyword matches in module name or description
+                    for word in query_lower.split_whitespace() {
+                        if module_name_lower.contains(word) {
+                            score += 3.0; // High score for name match
+                        }
+                        if module_desc_lower.contains(word) {
+                            score += 2.0; // Medium score for description match
+                        }
+                        
+                        // Check tool names
+                        for tool in &info.module.tools {
+                            if tool.to_lowercase().contains(word) {
+                                score += 2.5; // High score for tool name match
+                            }
+                        }
+                    }
+                    
+                    // Special handling for AWS services
+                    if query_lower.contains("s3") || query_lower.contains("bucket") {
+                        if module_name_lower.contains("s3") || module_desc_lower.contains("s3") || 
+                           module_desc_lower.contains("storage") || module_desc_lower.contains("bucket") {
+                            score += 5.0; // Very high score for S3-related modules
+                        }
+                    }
+                    
+                    if query_lower.contains("ec2") || query_lower.contains("instance") {
+                        if module_name_lower.contains("ec2") || module_desc_lower.contains("ec2") || 
+                           module_desc_lower.contains("instance") || module_desc_lower.contains("virtual machine") {
+                            score += 5.0; // Very high score for EC2-related modules
+                        }
+                    }
+                    
+                    if query_lower.contains("lambda") {
+                        if module_name_lower.contains("lambda") || module_desc_lower.contains("lambda") || 
+                           module_desc_lower.contains("serverless") {
+                            score += 5.0; // Very high score for Lambda-related modules
+                        }
+                    }
+                    
+                    // Apply server instruction bonus
+                    if has_priority_instruction && score > 0.0 {
+                        score *= 1.5; // 50% bonus for servers with priority instructions
+                        debug!("Applied priority bonus to {} (server has priority instructions)", info.module.name);
+                    }
+                    
+                    if score > 0.0 {
+                        module_scores.push((info.module.name.clone(), info.module.tools.clone(), score, has_priority_instruction));
+                    }
                 }
-            }
-            
-            if query_lower.contains("lambda") || query_lower.contains("function") {
-                if module_name_lower.contains("lambda") || module_desc_lower.contains("lambda") || 
-                   module_desc_lower.contains("serverless") || module_desc_lower.contains("function") {
-                    score += 5.0; // Very high score for Lambda-related modules
+                
+                // Sort by score (highest first) and select modules with score >= 5.0 (threshold)
+                module_scores.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap());
+                
+                let mut selected_tools = Vec::new();
+                for (module_name, tools, score, has_priority) in module_scores {
+                    if score >= 5.0 { // Relevance threshold
+                        debug!("Selected module {} with score {} (priority: {})", module_name, score, has_priority);
+                        selected_tools.extend(tools);
+                    } else {
+                        debug!("Skipped module {} with score {} (below threshold)", module_name, score);
+                    }
                 }
-            }
-            
-            // Apply server instruction bonus
-            if has_priority_instruction && score > 0.0 {
-                score *= 1.5; // 50% bonus for servers with priority instructions
-                debug!("Applied priority bonus to {} (server has priority instructions)", info.module.name);
-            }
-            
-            if score > 0.0 {
-                module_scores.push((info.module.name.clone(), info.module.tools.clone(), score, has_priority_instruction));
+                
+                if selected_tools.is_empty() {
+                    debug!("No tools selected based on heuristic relevance scoring");
+                } else {
+                    debug!("Heuristic selected {} tools from relevant modules", selected_tools.len());
+                }
+                
+                Ok(selected_tools)
             }
         }
-        
-        // Sort by score (highest first) and select modules with score >= 5.0 (threshold)
-        module_scores.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap());
-        
-        let mut selected_tools = Vec::new();
-        for (module_name, tools, score, has_priority) in module_scores {
-            if score >= 5.0 { // Relevance threshold
-                debug!("Selected module {} with score {} (priority: {})", module_name, score, has_priority);
-                selected_tools.extend(tools);
-            } else {
-                debug!("Skipped module {} with score {} (below threshold)", module_name, score);
-            }
-        }
-        
-        if selected_tools.is_empty() {
-            debug!("No tools selected based on relevance scoring");
-        } else {
-            debug!("Selected {} tools from relevant modules", selected_tools.len());
-        }
-        
-        Ok(selected_tools)
     }
 
     /// Forces re-selection of tools, bypassing the cache

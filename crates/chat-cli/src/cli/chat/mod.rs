@@ -1494,10 +1494,19 @@ impl ChatSession {
 
             // Perform dynamic tool selection if we have dynamic MCP servers
             let has_dynamic_servers = self.conversation.tool_manager.clients.values().any(|client| client.is_dynamic());
-            debug!("Dynamic tool selection check: has_dynamic_servers={}, tool_uses.is_empty()={}, query='{}'", 
-                has_dynamic_servers, self.tool_uses.is_empty(), &query_for_tool_selection);
             
-            if has_dynamic_servers && self.tool_uses.is_empty() {
+            // Always perform dynamic selection for new user queries when there are no pending tool uses
+            debug!("Dynamic tool selection check: has_dynamic_servers={}, tool_uses.is_empty()={}, pending_tool_index={:?}, query='{}'", 
+                has_dynamic_servers, self.tool_uses.is_empty(), self.pending_tool_index, &query_for_tool_selection);
+            
+            eprintln!("DYNAMIC CHECK: has_dynamic_servers={}, tool_uses.is_empty()={}, pending_tool_index={:?}", 
+                has_dynamic_servers, self.tool_uses.is_empty(), self.pending_tool_index);
+            
+            // Dynamic selection should happen when:
+            // 1. We have dynamic servers
+            // 2. No tools are currently being used (tool_uses is empty)
+            // 3. We're not in the middle of tool approval (pending_tool_index is None)
+            if has_dynamic_servers && self.tool_uses.is_empty() && self.pending_tool_index.is_none() {
                 // Get the current user query and conversation context
                 let conversation_context = self.conversation.get_context_summary();
                 
@@ -1507,6 +1516,18 @@ impl ChatSession {
                 match self.conversation.tool_manager.filter_tools_dynamically(&os.client, &query_for_tool_selection, &conversation_context).await {
                     Ok(filtered_tools) => {
                         debug!("Dynamic tool selection returned {} tools", filtered_tools.len());
+                        eprintln!("DYNAMIC SELECTION: Query='{}', Selected {} tools", &query_for_tool_selection, filtered_tools.len());
+                        
+                        // Log the filtered tools
+                        let filtered_tool_names: Vec<&str> = filtered_tools.keys().map(|s| s.as_str()).collect();
+                        debug!("Filtered tools: {:?}", filtered_tool_names);
+                        
+                        // Show which tools are from dynamic servers
+                        let dynamic_tools: Vec<&str> = filtered_tools.iter()
+                            .filter(|(_, spec)| matches!(&spec.tool_origin, ToolOrigin::McpServer(name) if self.conversation.tool_manager.clients.get(name).map_or(false, |c| c.is_dynamic())))
+                            .map(|(name, _)| name.as_str())
+                            .collect();
+                        eprintln!("DYNAMIC SELECTION: Dynamic server tools selected: {:?}", dynamic_tools);
                         
                         // Update the conversation's tools with the filtered set
                         self.conversation.tools = filtered_tools
@@ -1541,6 +1562,18 @@ impl ChatSession {
                             
                         let total_tools: usize = self.conversation.tools.values().map(|v| v.len()).sum();
                         debug!("Dynamic tool selection completed. Selected {} tools", total_tools);
+                        
+                        // Log which tools are selected by origin
+                        for (origin, tools) in &self.conversation.tools {
+                            let tool_names: Vec<String> = tools.iter().map(|t| {
+                                if let crate::api_client::model::Tool::ToolSpecification(spec) = t {
+                                    spec.name.clone()
+                                } else {
+                                    "unknown".to_string()
+                                }
+                            }).collect();
+                            debug!("Tools from {:?}: {:?}", origin, tool_names);
+                        }
                         
                         // Log which tools were selected
                         for (origin, tools) in &self.conversation.tools {
