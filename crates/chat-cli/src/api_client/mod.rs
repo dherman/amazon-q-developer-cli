@@ -5,6 +5,7 @@ mod error;
 pub mod model;
 mod opt_out;
 pub mod profile;
+mod request_logger;
 pub mod send_message_output;
 
 use std::sync::Arc;
@@ -39,10 +40,12 @@ use tracing::{
 
 use crate::api_client::credentials::CredentialsChain;
 use crate::api_client::model::{
+    ChatMessage,
     ChatResponseStream,
     ConversationState,
 };
 use crate::api_client::opt_out::OptOutInterceptor;
+use crate::api_client::request_logger::RequestLoggerInterceptor;
 use crate::api_client::send_message_output::SendMessageOutput;
 use crate::auth::builder_id::BearerResolver;
 use crate::aws_common::{
@@ -84,6 +87,12 @@ impl ApiClient {
         endpoint: Option<Endpoint>,
     ) -> Result<Self, ApiClientError> {
         let endpoint = endpoint.unwrap_or(Endpoint::configured_value(database));
+        
+        // Check if request logging is enabled via environment variable
+        let enable_request_logging = env.get("Q_DEBUG_REQUESTS").is_ok();
+        if enable_request_logging {
+            debug!("Request logging enabled via Q_DEBUG_REQUESTS environment variable");
+        }
 
         let credentials = Credentials::new("xxx", "xxx", None, None, "xxx");
         let bearer_sdk_config = aws_config::defaults(behavior_version())
@@ -99,6 +108,7 @@ impl ApiClient {
                 .http_client(crate::aws_common::http_client::client())
                 .interceptor(OptOutInterceptor::new(database))
                 .interceptor(UserAgentOverrideInterceptor::new())
+                .interceptor(RequestLoggerInterceptor::new(enable_request_logging))
                 .bearer_token_resolver(BearerResolver)
                 .app_name(app_name())
                 .endpoint_url(endpoint.url())
@@ -144,6 +154,7 @@ impl ApiClient {
                     .http_client(crate::aws_common::http_client::client())
                     .interceptor(OptOutInterceptor::new(database))
                     .interceptor(UserAgentOverrideInterceptor::new())
+                    .interceptor(RequestLoggerInterceptor::new(enable_request_logging))
                     .app_name(app_name())
                     .endpoint_url(endpoint.url())
                     .stalled_stream_protection(stalled_stream_protection_config())
@@ -156,6 +167,7 @@ impl ApiClient {
                         .http_client(crate::aws_common::http_client::client())
                         .interceptor(OptOutInterceptor::new(database))
                         .interceptor(UserAgentOverrideInterceptor::new())
+                        .interceptor(RequestLoggerInterceptor::new(enable_request_logging))
                         .bearer_token_resolver(BearerResolver)
                         .app_name(app_name())
                         .endpoint_url(endpoint.url())
@@ -260,8 +272,9 @@ impl ApiClient {
         let model_id_opt: Option<String> = user_input_message.model_id.clone();
 
         if let Some(client) = &self.streaming_client {
+            
             let conversation_state = amzn_codewhisperer_streaming_client::types::ConversationState::builder()
-                .set_conversation_id(conversation_id)
+                .set_conversation_id(conversation_id.clone())
                 .current_message(
                     amzn_codewhisperer_streaming_client::types::ChatMessage::UserInputMessage(
                         user_input_message.into(),
@@ -275,7 +288,8 @@ impl ApiClient {
                 )
                 .build()
                 .expect("building conversation should not fail");
-
+                
+            
             match client
                 .generate_assistant_response()
                 .conversation_state(conversation_state)

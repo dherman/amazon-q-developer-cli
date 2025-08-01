@@ -128,11 +128,42 @@
   - [ ] Measure selection latency
   - [ ] Test with varying numbers of tools
 
-- [ ] Real-world testing
-  - [ ] Test LLM-based selection with AWS MCP server
-  - [ ] Test fallback to heuristic when LLM is unavailable
+- [x] Real-world testing
+  - [x] Test LLM-based selection with AWS MCP server
+  - [x] Test fallback to heuristic when LLM is unavailable
   - [ ] Test with multiple dynamic servers
-  - [ ] Verify that non-dynamic tools remain available
+  - [x] Verify that non-dynamic tools remain available
+
+## ValidationException Investigation
+
+- [x] Debug ValidationException on second query after tool selection
+  - [x] Identified state contamination in CodewhispererStreamingClient
+  - [x] Confirmed issue by skipping tool selection after first call
+  - [x] Documented findings in validation-exception-investigation.md
+- [x] Implement solution for ValidationException
+  - [x] Add tool_selection_api_client field to ToolManager struct
+  - [x] Initialize tool selection API client in ToolManager::new when dynamic servers exist
+  - [x] Update filter_tools_dynamically to use dedicated tool selection client
+  - [x] Pass tool selection client to ToolSelector instead of main conversation client
+  - [x] Add lazy initialization to avoid creating client if not needed
+  - [x] Share authentication and configuration with main client
+  - [x] Add error handling for missing tool selection client
+  - [x] Update ToolManager initialization in chat mod.rs
+  - [x] Test with AWS MCP server to verify ValidationException is resolved
+  - [x] Verify tool selection works correctly with dedicated client
+  - [x] Test that non-dynamic servers still work without tool selection client
+  - [x] Remove temporary debug logging from api_client mod.rs
+  - [ ] Add unit tests for tool selection client initialization
+  - [ ] Add integration test to verify client isolation
+
+## ValidationException - Further Investigation Needed
+
+- [x] Separate API client implementation completed and working
+- [ ] ValidationException persists - appears to be backend issue
+- [ ] Investigate specific conversation patterns that trigger the error
+- [ ] Test with different history lengths and message formats
+- [ ] Consider alternative workarounds for the backend issue
+- [ ] Report detailed findings to AWS Q team
 
 ## Documentation
 

@@ -16,6 +16,7 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::atomic::{
     AtomicBool,
+    AtomicUsize,
     Ordering,
 };
 use std::sync::{
@@ -732,6 +733,23 @@ impl ToolManagerBuilder {
             });
         }
 
+        // Check if any servers are marked as dynamic
+        let has_dynamic_servers = server_dynamic_flags.values().any(|&is_dynamic| is_dynamic);
+        
+        // Initialize tool selection API client if dynamic servers exist
+        let tool_selection_api_client = if has_dynamic_servers {
+            debug!("Initializing tool selection API client for dynamic servers");
+            match ApiClient::new(&os.env, &os.fs, &mut os.database, None).await {
+                Ok(client) => Some(client),
+                Err(e) => {
+                    error!("Failed to initialize tool selection API client: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         Ok(ToolManager {
             conversation_id,
             clients,
@@ -746,6 +764,7 @@ impl ToolManagerBuilder {
             mcp_load_record: load_record,
             agent,
             disabled_servers: disabled_servers_display,
+            tool_selection_api_client,
             ..Default::default()
         })
     }
@@ -880,6 +899,10 @@ pub struct ToolManager {
     /// A collection of preferences that pertains to the conversation.
     /// As far as tool manager goes, this is relevant for tool and server filters
     pub agent: Arc<Mutex<Agent>>,
+
+    /// Dedicated API client for tool selection requests to avoid state contamination
+    /// with the main conversation API client. Only initialized when dynamic servers exist.
+    tool_selection_api_client: Option<ApiClient>,
 }
 
 impl Clone for ToolManager {
@@ -895,7 +918,12 @@ impl Clone for ToolManager {
             is_interactive: self.is_interactive,
             mcp_load_record: self.mcp_load_record.clone(),
             disabled_servers: self.disabled_servers.clone(),
-            ..Default::default()
+            notify: None,
+            loading_status_sender: None,
+            loading_display_task: None,
+            pending_clients: self.pending_clients.clone(),
+            agent: self.agent.clone(),
+            tool_selection_api_client: self.tool_selection_api_client.clone(),
         }
     }
 }
@@ -959,7 +987,15 @@ impl ToolManager {
             .map(Model::from_model_id)
             .unwrap_or(Model::Claude3Haiku);
         debug!("Using model {} for tool selection (from model_id: {:?})", model, current_model_id);
-        let tool_selector = ToolSelector::new(model, api_client);
+        
+        // Use the dedicated tool selection API client if available, otherwise fall back to the provided one
+        let tool_selection_client = self.tool_selection_api_client.as_ref()
+            .unwrap_or_else(|| {
+                warn!("Tool selection API client not initialized, falling back to main API client");
+                api_client
+            });
+        
+        let tool_selector = ToolSelector::new(model, tool_selection_client);
         let selected_tools = match tool_selector.select_tools(query, &all_modules_info, conversation_context).await {
             Ok(tools) => tools,
             Err(e) => {

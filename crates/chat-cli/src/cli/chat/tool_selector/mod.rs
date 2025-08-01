@@ -129,6 +129,7 @@ impl<'a> ToolSelector<'a> {
         
         // Try to use the LLM for tool selection
         debug!("Creating tool selection client with model: {:?}", self.model);
+        eprintln!("DEBUG: About to make LLM tool selection request with model: {:?}", self.model);
         
         let tool_selection_client = ToolSelectionClient::new(self.api_client, self.model);
         match tool_selection_client.select_tools(prompt).await {

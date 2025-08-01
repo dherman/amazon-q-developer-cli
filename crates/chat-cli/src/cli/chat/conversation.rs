@@ -108,6 +108,11 @@ pub struct ConversationState {
     /// Model explicitly selected by the user in this conversation state via `/model`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// Cumulative set of all tool names that have been available during this conversation.
+    /// Used for history sanitization to prevent tool names from being replaced with dummy
+    /// when dynamic tool selection changes the available tools.
+    #[serde(skip)]
+    cumulative_tool_names: HashSet<String>,
 }
 
 impl ConversationState {
@@ -124,36 +129,51 @@ impl ConversationState {
             None
         };
 
+        // Build tools and collect initial tool names for cumulative set
+        let mut cumulative_tool_names = HashSet::new();
+        let tools = tool_config
+            .into_values()
+            .fold(HashMap::<ToolOrigin, Vec<Tool>>::new(), |mut acc, v| {
+                // Add to cumulative set
+                cumulative_tool_names.insert(v.name.clone());
+                
+                let tool = Tool::ToolSpecification(ToolSpecification {
+                    name: v.name,
+                    description: v.description,
+                    input_schema: v.input_schema.into(),
+                });
+                acc.entry(v.tool_origin)
+                    .and_modify(|tools| tools.push(tool.clone()))
+                    .or_insert(vec![tool]);
+                acc
+            });
+
         Self {
             conversation_id: conversation_id.to_string(),
             next_message: None,
             history: VecDeque::new(),
             valid_history_range: Default::default(),
             transcript: VecDeque::with_capacity(MAX_CONVERSATION_STATE_HISTORY_LEN),
-            tools: tool_config
-                .into_values()
-                .fold(HashMap::<ToolOrigin, Vec<Tool>>::new(), |mut acc, v| {
-                    let tool = Tool::ToolSpecification(ToolSpecification {
-                        name: v.name,
-                        description: v.description,
-                        input_schema: v.input_schema.into(),
-                    });
-                    acc.entry(v.tool_origin)
-                        .and_modify(|tools| tools.push(tool.clone()))
-                        .or_insert(vec![tool]);
-                    acc
-                }),
+            tools,
             context_manager,
             tool_manager,
             context_message_length: None,
             latest_summary: None,
             agents,
             model: current_model_id,
+            cumulative_tool_names,
         }
     }
 
     pub fn latest_summary(&self) -> Option<&str> {
         self.latest_summary.as_deref()
+    }
+    
+    /// Adds tool names to the cumulative set. Used when tools are dynamically updated.
+    pub fn add_to_cumulative_tools(&mut self, tool_names: impl Iterator<Item = String>) {
+        let before_size = self.cumulative_tool_names.len();
+        self.cumulative_tool_names.extend(tool_names);
+        let after_size = self.cumulative_tool_names.len();
     }
 
     pub fn history(&self) -> &VecDeque<(UserMessage, AssistantMessage)> {
@@ -327,16 +347,9 @@ impl ConversationState {
     /// 3. The model had decided to call a tool that does not exist. The intervention here is to
     ///    substitute the non-existent tool name with a dummy.
     pub fn enforce_tool_use_history_invariants(&mut self) {
-        let tool_names: HashSet<_> = self
-            .tools
-            .values()
-            .flat_map(|tools| {
-                tools.iter().map(|tool| match tool {
-                    Tool::ToolSpecification(tool_specification) => tool_specification.name.as_str(),
-                })
-            })
-            .filter(|name| *name != DUMMY_TOOL_NAME)
-            .collect();
+        // Use cumulative tool names for history sanitization instead of current tools
+        let tool_names: &HashSet<String> = &self.cumulative_tool_names;
+        
 
         for (_, assistant) in &mut self.history {
             if let AssistantMessage::ToolUse { tool_uses, .. } = assistant {
@@ -351,21 +364,15 @@ impl ConversationState {
                         continue;
                     }
 
-                    let names: Vec<&str> = tool_names
+                    let names: Vec<&String> = tool_names
                         .iter()
-                        .filter_map(|name| {
-                            if name.ends_with(&tool_use.name) {
-                                Some(*name)
-                            } else {
-                                None
-                            }
-                        })
+                        .filter(|name| name.ends_with(&tool_use.name))
                         .collect();
 
                     // There's only one tool use matching, so we can just replace it with the
                     // found name.
                     if names.len() == 1 {
-                        tool_use.name = (*names.first().unwrap()).to_string();
+                        tool_use.name = names.first().unwrap().to_string();
                         continue;
                     }
 
@@ -485,6 +492,11 @@ impl ConversationState {
             .map(|(name, _)| name.clone())
             .collect();
             
+        // Add all tools from schema to cumulative set (before filtering)
+        for tool_spec in self.tool_manager.schema.values() {
+            self.cumulative_tool_names.insert(tool_spec.name.clone());
+        }
+        
         // TODO: make this more targeted so we don't have to clone the entire list of tools
         self.tools = self
             .tool_manager

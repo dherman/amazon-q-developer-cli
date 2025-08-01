@@ -1514,9 +1514,10 @@ impl ChatSession {
                 
                 // Filter tools dynamically based on the query
                 let current_model = self.conversation.model.as_deref();
+                debug!("Current conversation model for tool selection: {:?}", current_model);
+                
                 match self.conversation.tool_manager.filter_tools_dynamically(&os.client, &query_for_tool_selection, &conversation_context, current_model).await {
                     Ok(filtered_tools) => {
-                        debug!("Dynamic tool selection returned {} tools", filtered_tools.len());
                         debug!("Dynamic selection: Query='{}', Selected {} tools", &query_for_tool_selection, filtered_tools.len());
                         
                         // Log the filtered tools
@@ -1529,6 +1530,11 @@ impl ChatSession {
                             .map(|(name, _)| name.as_str())
                             .collect();
                         debug!("Dynamic selection: Dynamic server tools selected: {:?}", dynamic_tools);
+                        
+                        // Add all filtered tools to cumulative set
+                        self.conversation.add_to_cumulative_tools(
+                            filtered_tools.values().map(|spec| spec.name.clone())
+                        );
                         
                         // Update the conversation's tools with the filtered set
                         self.conversation.tools = filtered_tools
@@ -1587,6 +1593,7 @@ impl ChatSession {
                                 }
                             }
                         }
+                        
                     }
                     Err(e) => {
                         // Log the error but continue with all tools
@@ -1597,6 +1604,7 @@ impl ChatSession {
                 debug!("Skipping dynamic tool selection");
             }
 
+            
             let conv_state = self
                 .conversation
                 .as_sendable_conversation_state(os, &mut self.stderr, true)
@@ -1611,9 +1619,27 @@ impl ChatSession {
                 self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_owned()));
             }
 
-            Ok(ChatState::HandleResponseStream(
-                os.client.send_message(conv_state).await?,
-            ))
+            debug!("Sending main conversation request after dynamic tool selection");
+            debug!("Conversation ID: {:?}", conv_state.conversation_id);
+            debug!("Model ID in request: {:?}", conv_state.user_input_message.model_id);
+            debug!("User message content: {:?}", &conv_state.user_input_message.content);
+            debug!("History length: {:?}", conv_state.history.as_ref().map(|h| h.len()));
+            
+            // Log first and last history items if present
+            if let Some(history) = &conv_state.history {
+            }
+            
+            match os.client.send_message(conv_state).await {
+                Ok(response) => {
+                    debug!("Main conversation request succeeded");
+                    Ok(ChatState::HandleResponseStream(response))
+                },
+                Err(e) => {
+                    debug!("Main conversation request failed: {:?}", e);
+                    
+                    Err(ChatError::from(e))
+                }
+            }
         }
     }
 

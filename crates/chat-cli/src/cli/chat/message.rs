@@ -140,9 +140,16 @@ impl UserMessage {
     /// Converts this message into a [UserInputMessage] to be stored in the history of
     /// [api_client::model::ConversationState].
     pub fn into_history_entry(self) -> UserInputMessage {
+        // Ensure content is never empty for tool result messages
+        let content = match self.prompt() {
+            Some(prompt) if !prompt.is_empty() => prompt.to_string(),
+            _ if self.has_tool_use_results() => ".".to_string(),
+            _ => String::new(),
+        };
+        
         UserInputMessage {
             images: None,
-            content: self.prompt().unwrap_or_default().to_string(),
+            content,
             user_input_message_context: Some(UserInputMessageContext {
                 env_state: self.env_context.env_state,
                 tool_results: match self.content {
@@ -169,11 +176,22 @@ impl UserMessage {
             },
             _ => String::new(),
         };
+        
+        // Ensure content is never empty - add a minimal placeholder for tool results
+        let content = format!("{} {}", self.additional_context, formatted_prompt)
+            .trim()
+            .to_string();
+        
+        let content = if content.is_empty() && self.has_tool_use_results() {
+            // Add minimal content for tool result messages to avoid ValidationException
+            ".".to_string()
+        } else {
+            content
+        };
+        
         UserInputMessage {
             images: self.images,
-            content: format!("{} {}", self.additional_context, formatted_prompt)
-                .trim()
-                .to_string(),
+            content,
             user_input_message_context: Some(UserInputMessageContext {
                 env_state: self.env_context.env_state,
                 tool_results: match self.content {

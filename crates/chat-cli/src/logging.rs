@@ -250,9 +250,18 @@ fn create_filter_layer() -> EnvFilter {
         .or_else(|| std::env::var(Q_LOG_LEVEL).ok());
 
     match log_level {
-        Some(level) => EnvFilter::builder()
-            .with_default_directive(directive)
-            .parse_lossy(level),
+        Some(level) => {
+            // If the level doesn't contain module filters, add chat_cli=level to ensure our logs are visible
+            if !level.contains('=') && !level.contains(',') {
+                EnvFilter::builder()
+                    .with_default_directive(directive)
+                    .parse_lossy(format!("chat_cli={},aws_smithy_runtime_api={}", level, level))
+            } else {
+                EnvFilter::builder()
+                    .with_default_directive(directive)
+                    .parse_lossy(level)
+            }
+        },
         None => EnvFilter::default().add_directive(directive),
     }
 }
